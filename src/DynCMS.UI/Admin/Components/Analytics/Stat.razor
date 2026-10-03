@@ -1,0 +1,22 @@
+@namespace DynCMS.UI.Admin.Components.Analytics
+
+<div class="dc-stat @Tint" title="@Title">
+    <span class="dc-stat-tile"><Icon Name="@Icon" Size="20" /></span>
+    <strong>@Value</strong>
+    <span>
+        @Label
+        @if (Delta is { } d)
+        {
+            <em class="dc-delta @d.Class" title="Compared with the previous period">@d.Text</em>
+        }
+    </span>
+</div>
+
+@code {
+    [Parameter] public string Icon { get; set; } = "activity";
+    [Parameter] public string Label { get; set; } = string.Empty;
+    [Parameter] public string Value { get; set; } = string.Empty;
+    [Parameter] public (string Text, string Class)? Delta { get; set; }
+    [Parameter] public string? Tint { get; set; }
+    [Parameter] public string? Title { get; set; }
+}

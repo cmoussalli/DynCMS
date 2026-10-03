@@ -1,0 +1,454 @@
+@page "/admin/settings"
+@page "/admin/settings/document-types"
+@page "/admin/settings/document-types/new"
+@page "/admin/settings/document-types/{Id:guid}"
+@page "/admin/settings/templates"
+@page "/admin/settings/templates/new"
+@page "/admin/settings/templates/component/{Alias}"
+@page "/admin/settings/templates/{TemplateId:guid}"
+@page "/admin/settings/editors"
+@page "/admin/settings/languages"
+@page "/admin/settings/dictionary"
+@page "/admin/settings/dictionary/new"
+@page "/admin/settings/dictionary/{DictionaryId:guid}"
+@page "/admin/settings/api"
+@page "/admin/settings/plugins"
+@namespace DynCMS.UI.Admin.Pages
+@implements IDisposable
+@inject IContentTypeService ContentTypes
+@inject ITemplateRegistry Templates
+@inject IPropertyEditorRegistry Editors
+@inject IDictionaryService Dictionary
+@inject IPluginManager Plugins
+@inject NavigationManager Nav
+
+<PageTitle>Settings · DynCMS</PageTitle>
+
+<div class="dc-section">
+    <aside class="dc-tree-panel">
+        <div class="dc-panel-head">
+            <h2><span class="dc-panel-icon"><Icon Name="settings" Size="15" /></span> Settings</h2>
+        </div>
+        <div class="dc-tree">
+            <div class="dc-tree-group">
+                <div class="dc-tree-group-head">
+                    <span><Icon Name="box" Size="14" /> Document types <span class="dc-panel-count">@_types.Count</span></span>
+                    <a class="dc-btn dc-btn-icon" href="/admin/settings/document-types/new" title="New document type"><Icon Name="plus" Size="14" /></a>
+                </div>
+                <ul class="dc-tree-list">
+                    @foreach (var t in _types)
+                    {
+                        <li class="dc-tree-item" @key="t.Id">
+                            <div class="dc-tree-row @(Id == t.Id ? "dc-selected" : null)" style="padding-left:10px">
+                                <a class="dc-tree-link" href="/admin/settings/document-types/@t.Id"><Icon Name="@t.Icon" Size="15" /><span class="dc-tree-name">@t.Name</span></a>
+                            </div>
+                        </li>
+                    }
+                    @if (_types.Count == 0)
+                    {
+                        <li class="dc-muted dc-pad">No document types yet.</li>
+                    }
+                </ul>
+            </div>
+
+            <div class="dc-tree-group">
+                <div class="dc-tree-group-head">
+                    <span><Icon Name="layout" Size="14" /> Templates <span class="dc-panel-count">@Templates.All.Count</span></span>
+                    <a class="dc-btn dc-btn-icon" href="/admin/settings/templates/new" title="New page template"><Icon Name="plus" Size="14" /></a>
+                </div>
+                <ul class="dc-tree-list">
+                    <li class="dc-tree-item">
+                        <div class="dc-tree-row @(Mode == "templates" ? "dc-selected" : null)" style="padding-left:10px">
+                            <a class="dc-tree-link" href="/admin/settings/templates"><Icon Name="list" Size="15" /><span class="dc-tree-name">All templates</span></a>
+                        </div>
+                    </li>
+
+                    <li class="dc-tree-label">Page templates</li>
+                    @foreach (var t in _pages)
+                    {
+                        <li class="dc-tree-item" @key="t.Alias">
+                            <div class="dc-tree-row @(IsSelected(t) ? "dc-selected" : null)" style="padding-left:10px">
+                                <a class="dc-tree-link" href="@Link(t)">
+                                    <Icon Name="@(t.IsStored ? "layout" : "code")" Size="15" />
+                                    <span class="dc-tree-name">@t.Name</span>
+                                    @if (!t.IsStored)
+                                    {
+                                        <small title="Blazor component registered in code">code</small>
+                                    }
+                                </a>
+                            </div>
+                        </li>
+                    }
+                    @if (_pages.Count == 0)
+                    {
+                        <li class="dc-muted dc-pad">None yet.</li>
+                    }
+
+                    <li class="dc-tree-label">
+                        Partials
+                        <a class="dc-tree-label-action" href="/admin/settings/templates/new?role=partial" title="New partial"><Icon Name="plus" Size="12" /></a>
+                    </li>
+                    @foreach (var t in _partials)
+                    {
+                        <li class="dc-tree-item" @key="t.Alias">
+                            <div class="dc-tree-row @(IsSelected(t) ? "dc-selected" : null)" style="padding-left:10px">
+                                <a class="dc-tree-link" href="@Link(t)"><Icon Name="layers" Size="15" /><span class="dc-tree-name">@t.Name</span></a>
+                            </div>
+                        </li>
+                    }
+                    @if (_partials.Count == 0)
+                    {
+                        <li class="dc-muted dc-pad">
+                            No partials. <a href="/admin/settings/templates/new?role=partial">Create one</a> to reuse markup across templates.
+                        </li>
+                    }
+                </ul>
+            </div>
+
+            <div class="dc-tree-group">
+                <div class="dc-tree-group-head"><span><Icon Name="globe" Size="14" /> Localization</span></div>
+                <ul class="dc-tree-list">
+                    <li class="dc-tree-item">
+                        <div class="dc-tree-row @(Mode == "languages" ? "dc-selected" : null)" style="padding-left:10px">
+                            <a class="dc-tree-link" href="/admin/settings/languages"><Icon Name="globe" Size="15" /><span class="dc-tree-name">Languages</span></a>
+                        </div>
+                    </li>
+                    <li class="dc-tree-item">
+                        <div class="dc-tree-row @(Mode is "dictionary" or "dictionary-item" or "dictionary-new" ? "dc-selected" : null)" style="padding-left:10px">
+                            <a class="dc-tree-link" href="/admin/settings/dictionary"><Icon Name="book" Size="15" /><span class="dc-tree-name">Dictionary</span><small>@_dictionaryCount</small></a>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="dc-tree-group">
+                <div class="dc-tree-group-head"><span><Icon Name="zap" Size="14" /> Integrations</span></div>
+                <ul class="dc-tree-list">
+                    <li class="dc-tree-item">
+                        <div class="dc-tree-row @(Mode == "api" ? "dc-selected" : null)" style="padding-left:10px">
+                            <a class="dc-tree-link" href="/admin/settings/api"><Icon Name="lock" Size="15" /><span class="dc-tree-name">API &amp; AI agents</span></a>
+                        </div>
+                    </li>
+                    <AuthorizeView Roles="@CmsRoles.Admin">
+                        <li class="dc-tree-item">
+                            <div class="dc-tree-row @(Mode == "plugins" ? "dc-selected" : null)" style="padding-left:10px">
+                                <a class="dc-tree-link" href="/admin/settings/plugins"><Icon Name="box" Size="15" /><span class="dc-tree-name">Plugins</span><small>@_pluginsRunning/@_pluginsTotal</small></a>
+                            </div>
+                        </li>
+                    </AuthorizeView>
+                </ul>
+            </div>
+
+            @if (_pluginSettingsLinks.Count > 0)
+            {
+                <div class="dc-tree-group">
+                    <div class="dc-tree-group-head"><span><Icon Name="box" Size="14" /> Plugins</span></div>
+                    <ul class="dc-tree-list">
+                        @foreach (var item in _pluginSettingsLinks)
+                        {
+                            <li class="dc-tree-item" @key="item">
+                                <div class="dc-tree-row @(IsCurrent(item.Url) ? "dc-selected" : null)" style="padding-left:10px">
+                                    <a class="dc-tree-link" href="@item.Url"><Icon Name="@item.Icon" Size="15" /><span class="dc-tree-name">@item.Title</span></a>
+                                </div>
+                            </li>
+                        }
+                    </ul>
+                </div>
+            }
+
+            <div class="dc-tree-group">
+                <div class="dc-tree-group-head"><span><Icon Name="sliders" Size="14" /> Property editors</span></div>
+                <ul class="dc-tree-list">
+                    <li class="dc-tree-item">
+                        <div class="dc-tree-row @(Mode == "editors" ? "dc-selected" : null)" style="padding-left:10px">
+                            <a class="dc-tree-link" href="/admin/settings/editors"><Icon Name="list" Size="15" /><span class="dc-tree-name">Available editors</span><small>@Editors.All.Count</small></a>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </aside>
+
+    <main class="dc-workspace">
+        @if (Mode == "new")
+        {
+            <DocumentTypeEditor Id="null" OnSaved="ReloadAsync" @key="@("new")" />
+        }
+        else if (Id is Guid id)
+        {
+            <DocumentTypeEditor Id="id" OnSaved="ReloadAsync" OnDeleted="OnDeletedAsync" @key="id" />
+        }
+        else if (Mode == "template-new")
+        {
+            <TemplateEditor Id="null" NewRole="@Role" OnSaved="ReloadAsync" @key="@($"template-new-{Role}")" />
+        }
+        else if (Mode == "template-component")
+        {
+            <ComponentTemplateView Alias="@Alias" OnSaved="ReloadAsync" @key="@($"component-{Alias}")" />
+        }
+        else if (TemplateId is Guid templateId)
+        {
+            <TemplateEditor Id="templateId" OnSaved="ReloadAsync" OnDeleted="OnTemplateDeletedAsync" @key="templateId" />
+        }
+        else if (Mode == "templates")
+        {
+            <div class="dc-page">
+                <header class="dc-page-head dc-page-head-row">
+                    <div>
+                        <h1><Icon Name="layout" Size="22" /> Templates</h1>
+                        <p class="dc-muted">
+                            Templates decide how content renders. <strong>Page templates</strong> are picked on document types and content;
+                            <strong>partials</strong> are fragments a template pulls in with a render tag. Both are written in Liquid and edited here.
+                            Templates that come from <strong>code</strong> are Blazor components — create an editable version to take one over without redeploying.
+                        </p>
+                    </div>
+                    <div class="dc-inline">
+                        <a class="dc-btn" href="/admin/settings/templates/new?role=partial"><Icon Name="layers" Size="14" /> New partial</a>
+                        <a class="dc-btn dc-btn-primary" href="/admin/settings/templates/new"><Icon Name="plus" Size="14" /> New template</a>
+                    </div>
+                </header>
+
+                <div class="dc-table-wrap">
+                    <table class="dc-table">
+                        <thead><tr><th>Name</th><th>Alias</th><th>Kind</th><th>Where it lives</th><th></th></tr></thead>
+                        <tbody>
+                            @foreach (var t in Templates.All)
+                            {
+                                var overridden = t.IsStored ? Templates.GetComponent(t.Alias) : null;
+                                <tr @key="t.Alias">
+                                    <td>
+                                        <div class="dc-inline">
+                                            <Icon Name="@(t.IsPartial ? "layers" : t.IsStored ? "layout" : "code")" Size="15" />
+                                            <strong>@t.Name</strong>
+                                        </div>
+                                        @if (!string.IsNullOrWhiteSpace(t.Description))
+                                        {
+                                            <small class="dc-muted">@t.Description</small>
+                                        }
+                                    </td>
+                                    <td><code>@t.Alias</code></td>
+                                    <td>
+                                        @if (t.IsPartial)
+                                        {
+                                            <span class="dc-badge dc-badge-info">Partial</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="dc-badge dc-badge-muted">Page</span>
+                                        }
+                                    </td>
+                                    <td class="dc-muted">
+                                        @if (t.IsStored)
+                                        {
+                                            <span class="dc-badge dc-badge-success">Editable</span>
+                                            @if (overridden is not null)
+                                            {
+                                                <small> · overrides <code>@overridden.ComponentType?.Name</code></small>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <span class="dc-badge dc-badge-muted">In code</span>
+                                            <small> · <code>@t.ComponentType?.Name</code></small>
+                                        }
+                                    </td>
+                                    <td class="dc-table-actions">
+                                        @if (t.IsStored)
+                                        {
+                                            <a class="dc-btn dc-btn-sm" href="/admin/settings/templates/@t.StoredId"><Icon Name="edit" Size="14" /> Edit</a>
+                                        }
+                                        else
+                                        {
+                                            <a class="dc-btn dc-btn-sm" href="/admin/settings/templates/component/@t.Alias"><Icon Name="edit" Size="14" /> Manage</a>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                            @if (Templates.All.Count == 0)
+                            {
+                                <tr><td colspan="5" class="dc-muted">No templates yet. Create one, or register Blazor components with <code>AddTemplate&lt;T&gt;("alias")</code> in the host application.</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+        else if (Mode == "api")
+        {
+            <ApiKeysPanel />
+        }
+        else if (Mode == "plugins")
+        {
+            <PluginsPanel />
+        }
+        else if (Mode == "languages")
+        {
+            <LanguagesPanel />
+        }
+        else if (Mode == "dictionary-new")
+        {
+            <DictionaryItemEditor Id="null" ParentId="ParentId" OnSaved="ReloadAsync" @key="@($"dictionary-new-{ParentId}")" />
+        }
+        else if (DictionaryId is Guid dictionaryId)
+        {
+            <DictionaryItemEditor Id="dictionaryId" OnSaved="ReloadAsync" OnDeleted="OnDictionaryItemDeletedAsync" @key="dictionaryId" />
+        }
+        else if (Mode == "dictionary")
+        {
+            <DictionaryPanel OnChanged="ReloadAsync" />
+        }
+        else if (Mode == "editors")
+        {
+            <div class="dc-page">
+                <header class="dc-page-head">
+                    <h1><Icon Name="sliders" Size="22" /> Property editors</h1>
+                    <p class="dc-muted">Editors determine how a property is edited in the back office and how its value is stored.</p>
+                </header>
+                <div class="dc-table-wrap">
+                    <table class="dc-table">
+                        <thead><tr><th></th><th>Name</th><th>Alias</th><th>Description</th><th>Settings</th></tr></thead>
+                        <tbody>
+                            @foreach (var e in Editors.All)
+                            {
+                                <tr>
+                                    <td style="width:32px"><Icon Name="@e.Icon" Size="16" /></td>
+                                    <td><strong>@e.Name</strong></td>
+                                    <td><code>@e.Alias</code></td>
+                                    <td>@e.Description</td>
+                                    <td class="dc-muted">@string.Join(", ", e.ConfigFields.Select(f => f.Label))</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="dc-workspace-empty">
+                <span class="dc-empty-tile"><Icon Name="settings" Size="32" /></span>
+                <h2>Settings</h2>
+                <p>Manage document types, page templates and partials, the languages of the site and its dictionary of translated texts, review the property editors available to this site, create API keys for integrations and AI agents, and install plugins.</p>
+                <div class="dc-inline">
+                    <a class="dc-btn dc-btn-primary" href="/admin/settings/document-types/new"><Icon Name="plus" Size="14" /> New document type</a>
+                    <a class="dc-btn" href="/admin/settings/templates/new"><Icon Name="plus" Size="14" /> New template</a>
+                    <a class="dc-btn" href="/admin/settings/templates/new?role=partial"><Icon Name="layers" Size="14" /> New partial</a>
+                </div>
+            </div>
+        }
+    </main>
+</div>
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+    [Parameter] public Guid? TemplateId { get; set; }
+    [Parameter] public string? Alias { get; set; }
+    [Parameter] public Guid? DictionaryId { get; set; }
+    [SupplyParameterFromQuery(Name = "role")] public string? Role { get; set; }
+    [SupplyParameterFromQuery(Name = "parent")] public Guid? ParentId { get; set; }
+
+    private IReadOnlyList<ContentType> _types = [];
+    private IReadOnlyList<TemplateDefinition> _pages = [];
+    private IReadOnlyList<TemplateDefinition> _partials = [];
+    private int _dictionaryCount;
+    private int _pluginsRunning;
+    private int _pluginsTotal;
+    private IReadOnlyList<PluginMenuItem> _pluginSettingsLinks = [];
+
+    private string Mode
+    {
+        get
+        {
+            var path = Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].TrimEnd('/');
+            if (path.Contains("/templates/component/", StringComparison.OrdinalIgnoreCase)) return "template-component";
+            if (path.EndsWith("/templates/new", StringComparison.OrdinalIgnoreCase)) return "template-new";
+            if (TemplateId is not null) return "template";
+            if (path.EndsWith("/dictionary/new", StringComparison.OrdinalIgnoreCase)) return "dictionary-new";
+            if (DictionaryId is not null) return "dictionary-item";
+            if (path.EndsWith("/dictionary", StringComparison.OrdinalIgnoreCase)) return "dictionary";
+            if (path.EndsWith("/new", StringComparison.OrdinalIgnoreCase)) return "new";
+            if (path.EndsWith("/templates", StringComparison.OrdinalIgnoreCase)) return "templates";
+            if (path.EndsWith("/editors", StringComparison.OrdinalIgnoreCase)) return "editors";
+            if (path.EndsWith("/api", StringComparison.OrdinalIgnoreCase)) return "api";
+            if (path.EndsWith("/plugins", StringComparison.OrdinalIgnoreCase)) return "plugins";
+            if (path.EndsWith("/languages", StringComparison.OrdinalIgnoreCase)) return "languages";
+            return Id is null ? "overview" : "type";
+        }
+    }
+
+    private string Link(TemplateDefinition t) =>
+        t.IsStored ? $"/admin/settings/templates/{t.StoredId}" : $"/admin/settings/templates/component/{t.Alias}";
+
+    private bool IsSelected(TemplateDefinition t) =>
+        t.IsStored
+            ? TemplateId == t.StoredId
+            : string.Equals(Alias, t.Alias, StringComparison.OrdinalIgnoreCase);
+
+    private bool IsCurrent(string url) =>
+        string.Equals("/" + Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].TrimEnd('/'), url.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        Nav.LocationChanged += OnLocationChanged;
+        Templates.Changed += OnTemplatesChanged;
+        Plugins.Changed += OnPluginsChanged;
+        await ReloadAsync();
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => _ = InvokeAsync(StateHasChanged);
+
+    private void OnTemplatesChanged() => _ = InvokeAsync(() => { ReadTemplates(); StateHasChanged(); });
+
+    private void OnPluginsChanged() => _ = InvokeAsync(() => { ReadPlugins(); StateHasChanged(); });
+
+    private async Task ReloadAsync()
+    {
+        _types = await ContentTypes.GetAllAsync();
+        _dictionaryCount = await Dictionary.CountAsync();
+        ReadTemplates();
+        ReadPlugins();
+    }
+
+    private void ReadPlugins()
+    {
+        var plugins = Plugins.Plugins;
+        _pluginsTotal = plugins.Count;
+        _pluginsRunning = plugins.Count(p => p.IsRunning);
+        _pluginSettingsLinks = plugins.Where(p => p.IsRunning)
+            .SelectMany(p => p.MenuItems)
+            .Where(m => m.Placement == PluginMenuPlacement.Settings)
+            .OrderBy(m => m.Order).ThenBy(m => m.Title, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private void ReadTemplates()
+    {
+        _pages = Templates.Pages;
+        _partials = Templates.Partials;
+    }
+
+    private async Task OnDeletedAsync()
+    {
+        await ReloadAsync();
+        Nav.NavigateTo("/admin/settings/document-types");
+    }
+
+    private async Task OnDictionaryItemDeletedAsync()
+    {
+        await ReloadAsync();
+        Nav.NavigateTo("/admin/settings/dictionary");
+    }
+
+    private async Task OnTemplateDeletedAsync()
+    {
+        await ReloadAsync();
+        Nav.NavigateTo("/admin/settings/templates");
+    }
+
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+        Templates.Changed -= OnTemplatesChanged;
+        Plugins.Changed -= OnPluginsChanged;
+    }
+}

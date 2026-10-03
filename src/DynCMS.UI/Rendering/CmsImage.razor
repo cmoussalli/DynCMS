@@ -1,0 +1,33 @@
+@namespace DynCMS.UI.Rendering
+@inject IMediaService Media
+
+@if (_url is not null)
+{
+    <img src="@_url" alt="@(Alt ?? _item?.Name)" class="@Class" loading="@(Lazy ? "lazy" : null)" @attributes="AdditionalAttributes" />
+}
+else if (Fallback is not null)
+{
+    @Fallback
+}
+
+@code {
+    /// <summary>Media id as stored by the media picker (string or Guid).</summary>
+    [Parameter] public string? MediaId { get; set; }
+    [Parameter] public string? Alt { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public bool Lazy { get; set; } = true;
+    [Parameter] public RenderFragment? Fallback { get; set; }
+    [Parameter(CaptureUnmatchedValues = true)] public Dictionary<string, object>? AdditionalAttributes { get; set; }
+
+    private MediaItem? _item;
+    private string? _url;
+    private string? _loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor == MediaId) return;
+        _loadedFor = MediaId;
+        _item = Guid.TryParse(MediaId, out var id) ? await Media.GetAsync(id) : null;
+        _url = Media.GetUrl(_item);
+    }
+}

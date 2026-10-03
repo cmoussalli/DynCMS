@@ -1,0 +1,21 @@
+<Project>
+  <!--
+    Applied to every project that references the DynCMS.Host package (NuGet copies this file into build/ and
+    buildTransitive/). A project that references DynCMS.Host through a ProjectReference imports it by hand.
+  -->
+  <PropertyGroup>
+    <!--
+      The back-office login/logout pages render with static SSR and call NavigateTo after setting the cookie;
+      with this switch that is a redirect instead of a NavigationException.
+    -->
+    <BlazorDisableThrowNavigationException Condition="'$(BlazorDisableThrowNavigationException)' == ''">true</BlazorDisableThrowNavigationException>
+
+    <!--
+      The Web SDK ships _framework/blazor.web.js only when the project itself contains a .razor file
+      (Microsoft.NET.Sdk.Web.ProjectSystem.targets sets RequiresAspNetWebAssets from the Content items). A site
+      that leaves every component to DynCMS.Host - "dotnet new web" plus this package - has none, and the shell's
+      <script src="_framework/blazor.web.js"> would fail, leaving /setup and /admin without interactivity.
+    -->
+    <RequiresAspNetWebAssets Condition="'$(RequiresAspNetWebAssets)' == ''">true</RequiresAspNetWebAssets>
+  </PropertyGroup>
+</Project>

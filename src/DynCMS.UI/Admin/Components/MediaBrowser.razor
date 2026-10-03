@@ -1,0 +1,242 @@
+@namespace DynCMS.UI.Admin.Components
+@using Microsoft.Extensions.Options
+@inject IMediaService Media
+@inject ToastService Toasts
+@inject IOptions<DynCmsOptions> Options
+
+<div class="dc-media @(PickMode ? "dc-media-pick" : null)">
+    <div class="dc-media-toolbar">
+        <nav class="dc-crumbs">
+            <button type="button" @onclick="() => GoAsync(null)"><Icon Name="image" Size="14" /> Media</button>
+            @foreach (var a in _ancestors)
+            {
+                <span>/</span>
+                <button type="button" @onclick="() => GoAsync(a.Id)">@a.Name</button>
+            }
+            @if (_folder is not null)
+            {
+                <span>/</span>
+                <strong>@_folder.Name</strong>
+            }
+        </nav>
+        <div class="dc-media-actions">
+            <button type="button" class="dc-btn dc-btn-sm" @onclick="() => { _newFolder = !_newFolder; _newFolderName = null; }"><Icon Name="folder-plus" Size="14" /> New folder</button>
+            <label class="dc-btn dc-btn-primary dc-btn-sm dc-upload">
+                <Icon Name="upload" Size="14" /> Upload
+                <InputFile OnChange="UploadAsync" multiple accept="@Accept" />
+            </label>
+        </div>
+    </div>
+
+    @if (_newFolder)
+    {
+        <div class="dc-inline dc-media-newfolder">
+            <input class="dc-input dc-input-narrow" type="text" placeholder="Folder name" @bind="_newFolderName" @bind:event="oninput" @onkeyup="OnFolderKeyUp" />
+            <button type="button" class="dc-btn dc-btn-primary dc-btn-sm" disabled="@string.IsNullOrWhiteSpace(_newFolderName)" @onclick="CreateFolderAsync">Create</button>
+            <button type="button" class="dc-btn dc-btn-sm" @onclick="() => _newFolder = false">Cancel</button>
+        </div>
+    }
+
+    @if (_uploading > 0)
+    {
+        <div class="dc-alert dc-alert-info"><Icon Name="upload" Size="14" /> Uploading @_uploading file(s)…</div>
+    }
+
+    <div class="dc-media-layout">
+        <div class="dc-media-grid">
+            @if (_items is null)
+            {
+                <div class="dc-loading dc-media-empty"><span class="dc-spinner"></span> Loading…</div>
+            }
+            else if (!Visible.Any())
+            {
+                <div class="dc-empty dc-media-empty">
+                    <Icon Name="image" Size="28" />
+                    <p>@(ImagesOnly ? "No images here yet." : "This folder is empty.")</p>
+                    <span class="dc-muted">Upload files using the button above.</span>
+                </div>
+            }
+            else
+            {
+                @foreach (var item in Visible)
+                {
+                    <button type="button" class="dc-media-card @(item.IsFolder ? "dc-media-folder" : null) @(_selected?.Id == item.Id ? "dc-selected" : null)"
+                            @onclick="() => ClickAsync(item)" @key="item.Id" title="@(item.FileName ?? item.Name)">
+                        <span class="dc-media-thumb">
+                            @if (item.IsFolder)
+                            {
+                                <Icon Name="folder" Size="34" />
+                            }
+                            else if (item.IsImage)
+                            {
+                                <img src="@Media.GetUrl(item)" alt="@item.Name" loading="lazy" />
+                            }
+                            else
+                            {
+                                <Icon Name="file" Size="30" />
+                                <span class="dc-media-ext">@item.Extension?.TrimStart('.').ToUpperInvariant()</span>
+                            }
+                        </span>
+                        <span class="dc-media-name">@item.Name</span>
+                        @if (_selected?.Id == item.Id)
+                        {
+                            <span class="dc-media-check"><Icon Name="check" Size="12" /></span>
+                        }
+                    </button>
+                }
+            }
+        </div>
+
+        @if (!PickMode && _selected is not null)
+        {
+            <aside class="dc-media-details">
+                <div class="dc-media-details-head">
+                    <h4>@(_selected.IsFolder ? "Folder" : "File")</h4>
+                    <button type="button" class="dc-btn dc-btn-icon" @onclick="() => _selected = null"><Icon Name="x" Size="14" /></button>
+                </div>
+                @if (_selected.IsImage)
+                {
+                    <img class="dc-media-preview" src="@Media.GetUrl(_selected)" alt="@_selected.Name" />
+                }
+                <label class="dc-field">
+                    <span class="dc-label">Name</span>
+                    <input class="dc-input" type="text" value="@_selected.Name" @onchange="RenameAsync" />
+                </label>
+                @if (!_selected.IsFolder)
+                {
+                    <dl class="dc-dl">
+                        <dt>File</dt><dd>@_selected.FileName</dd>
+                        <dt>Type</dt><dd>@_selected.MimeType</dd>
+                        <dt>Size</dt><dd>@MediaPickerEditor.FormatSize(_selected.SizeBytes)</dd>
+                        <dt>URL</dt><dd><a href="@Media.GetUrl(_selected)" target="_blank" rel="noopener">@Media.GetUrl(_selected)</a></dd>
+                        <dt>Id</dt><dd><code>@_selected.Id</code></dd>
+                    </dl>
+                }
+                <button type="button" class="dc-btn dc-btn-danger-ghost dc-btn-sm" @onclick="() => _confirmDelete = true"><Icon Name="trash" Size="14" /> Delete</button>
+            </aside>
+        }
+    </div>
+</div>
+
+@if (_confirmDelete && _selected is not null)
+{
+    <ConfirmDialog Title="@($"Delete {(_selected.IsFolder ? "folder" : "file")}")"
+                   Message="@($"Delete \"{_selected.Name}\"{(_selected.IsFolder ? " and all of its contents" : "")}? Content referencing it will lose the link.")"
+                   ConfirmText="Delete" Danger="true" OnConfirm="DeleteAsync" OnCancel="() => _confirmDelete = false" />
+}
+
+@code {
+    [Parameter] public bool PickMode { get; set; }
+    [Parameter] public bool ImagesOnly { get; set; }
+    [Parameter] public Guid? InitialFolderId { get; set; }
+    [Parameter] public EventCallback<MediaItem> OnPick { get; set; }
+
+    private Guid? _folderId;
+    private MediaItem? _folder;
+    private IReadOnlyList<MediaItem> _ancestors = [];
+    private IReadOnlyList<MediaItem>? _items;
+    private MediaItem? _selected;
+    private bool _newFolder;
+    private string? _newFolderName;
+    private int _uploading;
+    private bool _confirmDelete;
+
+    private IEnumerable<MediaItem> Visible => _items?.Where(i => i.IsFolder || !ImagesOnly || i.IsImage) ?? [];
+
+    private string Accept => ImagesOnly ? "image/*" : string.Join(',', Options.Value.AllowedUploadExtensions);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _folderId = InitialFolderId;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _folder = _folderId is Guid id ? await Media.GetAsync(id) : null;
+        _ancestors = _folderId is Guid fid ? await Media.GetAncestorsAsync(fid) : [];
+        _items = await Media.GetChildrenAsync(_folderId);
+    }
+
+    private async Task GoAsync(Guid? folderId)
+    {
+        _folderId = folderId;
+        _selected = null;
+        await LoadAsync();
+    }
+
+    private async Task ClickAsync(MediaItem item)
+    {
+        if (item.IsFolder)
+        {
+            if (!PickMode && _selected?.Id != item.Id)
+            {
+                _selected = item;
+                return;
+            }
+            await GoAsync(item.Id);
+            return;
+        }
+        if (PickMode) await OnPick.InvokeAsync(item);
+        else _selected = _selected?.Id == item.Id ? null : item;
+    }
+
+    private Task OnFolderKeyUp(KeyboardEventArgs e) => e.Key == "Enter" ? CreateFolderAsync() : Task.CompletedTask;
+
+    private async Task CreateFolderAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_newFolderName)) return;
+        try
+        {
+            await Media.CreateFolderAsync(_folderId, _newFolderName);
+            _newFolder = false;
+            _newFolderName = null;
+            await LoadAsync();
+        }
+        catch (InvalidOperationException ex) { Toasts.Error(ex); }
+    }
+
+    private async Task UploadAsync(InputFileChangeEventArgs e)
+    {
+        var files = e.GetMultipleFiles(50);
+        _uploading = files.Count;
+        var ok = 0;
+        foreach (var file in files)
+        {
+            try
+            {
+                await using var stream = file.OpenReadStream(Options.Value.MaxUploadBytes);
+                await Media.UploadAsync(_folderId, file.Name, file.ContentType, stream);
+                ok++;
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or IOException)
+            {
+                Toasts.Error(ex, $"Could not upload {file.Name}");
+            }
+            _uploading--;
+            StateHasChanged();
+        }
+        _uploading = 0;
+        if (ok > 0) Toasts.Success($"Uploaded {ok} file(s)");
+        await LoadAsync();
+    }
+
+    private async Task RenameAsync(ChangeEventArgs e)
+    {
+        if (_selected is null) return;
+        var name = e.Value?.ToString();
+        if (string.IsNullOrWhiteSpace(name)) return;
+        _selected = await Media.RenameAsync(_selected.Id, name) ?? _selected;
+        await LoadAsync();
+    }
+
+    private async Task DeleteAsync()
+    {
+        _confirmDelete = false;
+        if (_selected is null) return;
+        await Media.DeleteAsync(_selected.Id);
+        Toasts.Info("Deleted", _selected.Name);
+        _selected = null;
+        await LoadAsync();
+    }
+}

@@ -1,0 +1,16 @@
+@namespace DynCMS.UI.Admin.PropertyEditors
+@inherits PropertyEditorBase
+
+<input id="@InputId" class="@InputClass dc-input-narrow" type="number" value="@Value"
+       min="@Config("min")" max="@Config("max")" step="@(Config("step") ?? "any")"
+       @onchange="e => SetValueAsync(Normalize(e.Value?.ToString()))" />
+
+@code {
+    private static string? Normalize(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        return double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var d)
+            ? d.ToString(CultureInfo.InvariantCulture)
+            : raw;
+    }
+}

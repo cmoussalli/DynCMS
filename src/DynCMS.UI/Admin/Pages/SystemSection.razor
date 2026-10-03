@@ -1,0 +1,123 @@
+@page "/admin/system"
+@namespace DynCMS.UI.Admin.Pages
+@attribute [Authorize(Roles = CmsRoles.Admin)]
+@implements IDisposable
+@inject ISystemVersionService Versions
+@inject IPluginManager Plugins
+
+<PageTitle>System · DynCMS</PageTitle>
+
+<div class="dc-page dc-page-wide">
+    <header class="dc-page-head dc-page-head-row">
+        <div>
+            <h1><Icon Name="info" Size="22" /> System</h1>
+            <p class="dc-muted">The version of this DynCMS application layer and of its database. Plugins declare the lowest DynCMS version they support and are only attached to a site that is at least that new.</p>
+        </div>
+        <button type="button" class="dc-btn" @onclick="LoadAsync" disabled="@_loading" title="Refresh"><Icon Name="refresh" Size="14" /> Refresh</button>
+    </header>
+
+    @if (_error is not null)
+    {
+        <div class="dc-alert dc-alert-error"><Icon Name="alert" Size="15" /> <span>@_error</span></div>
+    }
+    else if (_info is null)
+    {
+        <div class="dc-loading"><span class="dc-spinner"></span> Reading versions…</div>
+    }
+    else
+    {
+        @if (_info.State == DatabaseVersionState.NewerThanApplication)
+        {
+            <div class="dc-alert dc-alert-warn"><Icon Name="alert" Size="15" /> <span>This database was prepared by a newer DynCMS (schema @_info.DatabaseSchemaVersion@(_info.DatabaseApplicationVersion is { Length: > 0 } v ? $", DynCMS {v}" : null)), but this site runs DynCMS @_info.ApplicationVersion with schema @_info.ExpectedSchemaVersion. Update DynCMS before editing content.</span></div>
+        }
+
+        <div class="dc-stats">
+            <div class="dc-stat"><span class="dc-stat-tile"><Icon Name="layers" Size="20" /></span><strong style="font-size:20px">@_info.ApplicationVersion</strong><span>Application</span></div>
+            <div class="dc-stat dc-stat-violet"><span class="dc-stat-tile"><Icon Name="database" Size="20" /></span><strong style="font-size:20px">@(_info.DatabaseSchemaVersion?.ToString() ?? "—")</strong><span>Database schema</span></div>
+            <div class="@("dc-stat " + (_info.State == DatabaseVersionState.NewerThanApplication ? "dc-stat-amber" : "dc-stat-green"))"><span class="dc-stat-tile"><Icon Name="@(_info.State == DatabaseVersionState.NewerThanApplication ? "alert" : "check-circle")" Size="20" /></span><strong style="font-size:20px">@(_info.State == DatabaseVersionState.NewerThanApplication ? "Update needed" : "Up to date")</strong><span>Database state</span></div>
+        </div>
+
+        <div class="dc-dash-grid">
+            <div class="dc-dash-col">
+                <section class="dc-card">
+                    <div class="dc-card-head"><h3><Icon Name="layers" Size="16" /> Versions</h3></div>
+                    <dl class="dc-data-kv">
+                        <dt>Application layer</dt><dd><code>@_info.ApplicationVersion</code></dd>
+                        <dt>Schema this build expects</dt><dd><code>@_info.ExpectedSchemaVersion</code></dd>
+                        <dt>Schema in the database</dt><dd><code>@(_info.DatabaseSchemaVersion?.ToString() ?? "not recorded")</code></dd>
+                        <dt>Last started by</dt><dd>@(_info.DatabaseApplicationVersion is { Length: > 0 } last ? $"DynCMS {last}" : "—")</dd>
+                        <dt>Runtime</dt><dd>@_info.Runtime</dd>
+                        <dt>Operating system</dt><dd>@_info.OperatingSystem</dd>
+                    </dl>
+                </section>
+            </div>
+
+            <div class="dc-dash-col">
+                <section class="dc-card">
+                    <div class="dc-card-head"><h3><Icon Name="box" Size="16" /> Plugin compatibility</h3><a href="/admin/settings/plugins">Manage plugins <Icon Name="arrow-right" Size="13" /></a></div>
+                    @if (Plugins.Plugins.Count == 0)
+                    {
+                        <p class="dc-muted">No plugins installed.</p>
+                    }
+                    else
+                    {
+                        <dl class="dc-data-kv">
+                            @foreach (var p in Plugins.Plugins)
+                            {
+                                <dt>@p.Name <small class="dc-muted">@p.Version</small></dt>
+                                <dd>
+                                    @switch (p.Compatibility)
+                                    {
+                                        case PluginCompatibility.Compatible:
+                                            <span class="dc-badge dc-badge-success">Compatible</span> <span class="dc-muted">needs DynCMS @p.MinimumCmsVersion or newer</span>
+                                            break;
+                                        case PluginCompatibility.NeedsNewerCms:
+                                            <span class="dc-badge dc-badge-warn">Update DynCMS</span> <span class="dc-muted">needs DynCMS @p.MinimumCmsVersion or newer</span>
+                                            break;
+                                        default:
+                                            <span class="dc-badge dc-badge-warn">No minimum version</span> <span class="dc-muted">the plugin does not declare one</span>
+                                            break;
+                                    }
+                                </dd>
+                            }
+                        </dl>
+                    }
+                </section>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private SystemVersionInfo? _info;
+    private string? _error;
+    private bool _loading;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Plugins.Changed += OnPluginsChanged;
+        await LoadAsync();
+    }
+
+    private void OnPluginsChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _info = await Versions.GetAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    public void Dispose() => Plugins.Changed -= OnPluginsChanged;
+}

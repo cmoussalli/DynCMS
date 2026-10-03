@@ -1,0 +1,82 @@
+@namespace DynCMS.UI.Admin.Components
+
+@*
+    Asked before publishing content that varies by culture: which languages go live? Languages without a name
+    cannot be picked; mandatory languages that are not live yet are pre-selected and locked, because the content
+    cannot be published in any language until they are.
+*@
+<Modal Title="Publish" OnClose="OnCancel" Size="Modal.ModalSize.Small">
+    <ChildContent>
+        <p class="dc-muted" style="margin-bottom:12px">Choose the languages to publish. Shared values go live with every one of them.</p>
+        <div class="dc-publish-list">
+            @foreach (var l in Languages)
+            {
+                var state = Node.GetCulture(l.IsoCode);
+                var exists = state is { Exists: true };
+                var locked = l.IsMandatory && exists && state is { IsPublished: false };
+                <label class="dc-check dc-publish-row @(exists ? null : "dc-disabled")" @key="l.IsoCode">
+                    <input type="checkbox" checked="@_selected.Contains(l.IsoCode)" disabled="@(!exists || locked)"
+                           @onchange="e => Toggle(l.IsoCode, e.Value is true)" />
+                    <span class="dc-publish-text">
+                        <strong>@l.Name</strong> <code class="dc-alias">@l.IsoCode</code>
+                        <small class="dc-muted">
+                            @if (!exists)
+                            {
+                                <text>No name in this language yet.</text>
+                            }
+                            else if (state!.IsPublished && !state.HasPendingChanges)
+                            {
+                                <text>Published, no changes.</text>
+                            }
+                            else if (state.IsPublished)
+                            {
+                                <text>Published, with pending changes.</text>
+                            }
+                            else
+                            {
+                                <text>Not published yet.</text>
+                            }
+                            @if (l.IsMandatory)
+                            {
+                                <text> Mandatory language.</text>
+                            }
+                        </small>
+                    </span>
+                </label>
+            }
+        </div>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="dc-btn" @onclick="OnCancel">Cancel</button>
+        <button type="button" class="dc-btn dc-btn-success" disabled="@(_selected.Count == 0)" @onclick="() => OnPublish.InvokeAsync(_selected.ToList())">
+            <Icon Name="publish" Size="14" /> Publish @(_selected.Count == 1 ? "1 language" : $"{_selected.Count} languages")
+        </button>
+    </Footer>
+</Modal>
+
+@code {
+    [Parameter, EditorRequired] public ContentNode Node { get; set; } = default!;
+    [Parameter, EditorRequired] public IReadOnlyList<Language> Languages { get; set; } = [];
+    /// <summary>The language being edited: pre-selected.</summary>
+    [Parameter] public string? Current { get; set; }
+    [Parameter] public EventCallback<IReadOnlyList<string>> OnPublish { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private readonly HashSet<string> _selected = new(StringComparer.OrdinalIgnoreCase);
+
+    protected override void OnInitialized()
+    {
+        foreach (var l in Languages)
+        {
+            var state = Node.GetCulture(l.IsoCode);
+            if (state is not { Exists: true }) continue;
+            if (l.Is(Current) || (l.IsMandatory && !state.IsPublished)) _selected.Add(l.IsoCode);
+        }
+    }
+
+    private void Toggle(string iso, bool on)
+    {
+        if (on) _selected.Add(iso);
+        else _selected.Remove(iso);
+    }
+}

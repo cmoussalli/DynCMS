@@ -1,0 +1,52 @@
+@namespace DynCMS.UI.Admin.Components
+@implements IDisposable
+@inject ToastService Toasts
+
+<div class="dc-toasts" aria-live="polite">
+    @foreach (var t in Toasts.Messages)
+    {
+        <div class="dc-toast dc-toast-@t.Level.ToString().ToLowerInvariant()" @key="t.Id">
+            <Icon Name="@IconFor(t.Level)" />
+            <div class="dc-toast-text">
+                <strong>@t.Title</strong>
+                @if (!string.IsNullOrWhiteSpace(t.Detail))
+                {
+                    <span>@t.Detail</span>
+                }
+            </div>
+            <button type="button" class="dc-btn dc-btn-icon" @onclick="() => Toasts.Dismiss(t.Id)"><Icon Name="x" Size="14" /></button>
+        </div>
+    }
+</div>
+
+@code {
+    private Timer? _timer;
+
+    protected override void OnInitialized()
+    {
+        Toasts.Changed += OnChanged;
+        _timer = new Timer(_ => Sweep(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+    }
+
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void Sweep()
+    {
+        var expired = Toasts.Messages.Where(m => DateTime.UtcNow - m.CreatedAt > TimeSpan.FromSeconds(m.Level == ToastLevel.Error ? 9 : 4)).ToList();
+        foreach (var m in expired) Toasts.Dismiss(m.Id);
+    }
+
+    private static string IconFor(ToastLevel level) => level switch
+    {
+        ToastLevel.Success => "check",
+        ToastLevel.Warning => "alert",
+        ToastLevel.Error => "alert",
+        _ => "info"
+    };
+
+    public void Dispose()
+    {
+        Toasts.Changed -= OnChanged;
+        _timer?.Dispose();
+    }
+}

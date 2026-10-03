@@ -1,0 +1,78 @@
+@page "/guestbook"
+@inject GuestbookService Guestbook
+
+@*
+    A site page: rendered inside the site's layout at /guestbook while the plugin runs. The stylesheet comes from the
+    plugin's wwwroot folder, which DynCMS serves at /_content/{plugin id}/.
+*@
+
+<PageTitle>@Guestbook.Options.Title</PageTitle>
+<HeadContent>
+    <link rel="stylesheet" href="_content/DynCMS.Plugin.Guestbook/guestbook.css" />
+</HeadContent>
+
+<section class="gb">
+    <h1>@Guestbook.Options.Title</h1>
+    <p class="gb-lead">Leave a note for everyone who visits after you.</p>
+
+    <form class="gb-form" @onsubmit="SignAsync" @onsubmit:preventDefault>
+        <label>Your name <input @bind="_name" maxlength="80" required /></label>
+        <label>Message <textarea @bind="_message" rows="4" maxlength="@Guestbook.Options.MaxMessageLength" required></textarea></label>
+        @if (_error is not null)
+        {
+            <p class="gb-error">@_error</p>
+        }
+        @if (_thanks is not null)
+        {
+            <p class="gb-thanks">@_thanks</p>
+        }
+        <button type="submit" disabled="@_saving">@(_saving ? "Sending…" : "Sign the guestbook")</button>
+    </form>
+
+    <ol class="gb-entries">
+        @foreach (var e in _entries)
+        {
+            <li @key="e.Id">
+                <p class="gb-message">@e.Message</p>
+                <footer><strong>@e.Name</strong> · <time datetime="@e.CreatedAt.ToString("o")">@e.CreatedAt.ToLocalTime().ToString("d MMMM yyyy", CultureInfo.CurrentCulture)</time></footer>
+            </li>
+        }
+        @if (_entries.Count == 0)
+        {
+            <li class="gb-empty">No entries yet. Be the first.</li>
+        }
+    </ol>
+</section>
+
+@code {
+    private IReadOnlyList<GuestbookEntry> _entries = [];
+    private string _name = string.Empty;
+    private string _message = string.Empty;
+    private string? _error;
+    private string? _thanks;
+    private bool _saving;
+
+    protected override async Task OnInitializedAsync() => _entries = await Guestbook.GetApprovedAsync();
+
+    private async Task SignAsync()
+    {
+        _error = null;
+        _thanks = null;
+        _saving = true;
+        try
+        {
+            var entry = await Guestbook.SignAsync(_name, _message);
+            _thanks = entry.IsApproved ? "Thank you! Your entry is live." : "Thank you! Your entry will appear once it has been approved.";
+            _message = string.Empty;
+            _entries = await Guestbook.GetApprovedAsync();
+        }
+        catch (ArgumentException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

@@ -1,0 +1,17 @@
+@page "/admin/logout"
+@namespace DynCMS.UI.Admin.Auth
+@layout BlankLayout
+@inject CookieAuthService CookieAuth
+@inject NavigationManager Nav
+
+<PageTitle>Signing out · DynCMS</PageTitle>
+<p class="dc-muted" style="padding:2rem">Signing out…</p>
+
+@code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        await CookieAuth.DeleteTokenAsync();
+        Nav.NavigateTo(DynCmsUi.LoginPath, forceLoad: true);
+    }
+}

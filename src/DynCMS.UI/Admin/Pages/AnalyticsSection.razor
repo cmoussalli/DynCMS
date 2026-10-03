@@ -1,0 +1,171 @@
+@page "/admin/analytics"
+@page "/admin/analytics/{View}"
+@namespace DynCMS.UI.Admin.Pages
+@using DynCMS.Core.Analytics
+@using DynCMS.UI.Admin.Components.Analytics
+@inject IAnalyticsService Analytics
+@inject IAnalyticsSettingsService Settings
+
+<PageTitle>Analytics · DynCMS</PageTitle>
+
+<div class="dc-section">
+    <aside class="dc-tree-panel">
+        <div class="dc-panel-head">
+            <h2><span class="dc-panel-icon"><Icon Name="bar-chart" Size="15" /></span> Analytics</h2>
+        </div>
+        <div class="dc-tree">
+            <div class="dc-tree-group">
+                <div class="dc-tree-group-head"><span><Icon Name="activity" Size="14" /> Reports</span></div>
+                <ul class="dc-tree-list">
+                    @foreach (var (id, label, icon, href) in Views)
+                    {
+                        <li class="dc-tree-item">
+                            <div class="dc-tree-row @(Mode == id ? "dc-selected" : null)" style="padding-left:10px">
+                                <a class="dc-tree-link" href="@href"><Icon Name="@icon" Size="15" /><span class="dc-tree-name">@label</span>
+                                    @if (id == "visitors" && _active > 0) { <small class="dc-an-live-count" title="Visitors in the last 5 minutes">@_active</small> }
+                                </a>
+                            </div>
+                        </li>
+                    }
+                </ul>
+            </div>
+            <AuthorizeView Roles="@CmsRoles.Admin">
+                <div class="dc-tree-group">
+                    <div class="dc-tree-group-head"><span><Icon Name="settings" Size="14" /> Administration</span></div>
+                    <ul class="dc-tree-list">
+                        <li class="dc-tree-item">
+                            <div class="dc-tree-row @(Mode == "settings" ? "dc-selected" : null)" style="padding-left:10px">
+                                <a class="dc-tree-link" href="/admin/analytics/settings"><Icon Name="sliders" Size="15" /><span class="dc-tree-name">Settings &amp; data</span>
+                                    @if (!Settings.Current.Enabled) { <small class="dc-badge dc-badge-warn">off</small> }
+                                </a>
+                            </div>
+                        </li>
+                    </ul>
+                </div>
+            </AuthorizeView>
+            @if (!Settings.Current.Enabled)
+            {
+                <div class="dc-an-tree-note"><Icon Name="alert" Size="14" /> <span>Tracking is turned off. Reports show what was recorded before.</span></div>
+            }
+        </div>
+    </aside>
+
+    <main class="dc-workspace">
+        <div class="dc-page dc-an-page">
+            <header class="dc-page-head dc-page-head-row dc-an-head">
+                <div>
+                    <h1><Icon Name="@CurrentIcon" Size="22" /> @CurrentTitle</h1>
+                    <p class="dc-muted">@CurrentDescription</p>
+                </div>
+                @if (Mode != "settings")
+                {
+                    <AnalyticsRangePicker Preset="@_preset" Range="_range" OnChange="OnRangeChanged" />
+                }
+            </header>
+
+            @switch (Mode)
+            {
+                case "pages":
+                    <AnalyticsPages Range="_range" />
+                    break;
+                case "visitors":
+                    <AnalyticsVisitors Range="_range" Path="@Path" Visitor="@Visitor" Session="@Session" Ip="@Ip" Country="@Country" />
+                    break;
+                case "map":
+                    <AnalyticsMap Range="_range" />
+                    break;
+                case "sources":
+                    <AnalyticsSources Range="_range" />
+                    break;
+                case "technology":
+                    <AnalyticsTechnology Range="_range" />
+                    break;
+                case "settings":
+                    <AuthorizeView Roles="@CmsRoles.Admin">
+                        <Authorized><AnalyticsSettingsPanel Range="_range" /></Authorized>
+                        <NotAuthorized><div class="dc-alert dc-alert-warn"><Icon Name="lock" Size="15" /> <span>Only administrators can change analytics settings.</span></div></NotAuthorized>
+                    </AuthorizeView>
+                    break;
+                default:
+                    <AnalyticsOverview Range="_range" />
+                    break;
+            }
+        </div>
+    </main>
+</div>
+
+@code {
+    private static readonly (string Id, string Label, string Icon, string Href)[] Views =
+    [
+        ("overview", "Overview", "grid", "/admin/analytics"),
+        ("pages", "Pages", "document", "/admin/analytics/pages"),
+        ("visitors", "Visitors", "eye", "/admin/analytics/visitors"),
+        ("map", "Map", "map", "/admin/analytics/map"),
+        ("sources", "Sources", "compass", "/admin/analytics/sources"),
+        ("technology", "Technology", "monitor", "/admin/analytics/technology")
+    ];
+
+    [Parameter] public string? View { get; set; }
+    [SupplyParameterFromQuery] public string? Path { get; set; }
+    [SupplyParameterFromQuery] public string? Visitor { get; set; }
+    [SupplyParameterFromQuery] public string? Session { get; set; }
+    [SupplyParameterFromQuery] public string? Ip { get; set; }
+    [SupplyParameterFromQuery] public string? Country { get; set; }
+
+    private string _preset = "30d";
+    private AnalyticsRange _range = AnalyticsRangePicker.RangeFor("30d");
+    private long _active;
+
+    private string Mode => (View ?? string.Empty).ToLowerInvariant() switch
+    {
+        "pages" => "pages",
+        "visitors" or "live" or "log" => "visitors",
+        "map" or "geo" => "map",
+        "sources" or "referrers" => "sources",
+        "technology" or "tech" or "browsers" => "technology",
+        "settings" => "settings",
+        _ => "overview"
+    };
+
+    private string CurrentIcon => Mode == "settings" ? "sliders" : Views.First(v => v.Id == Mode).Icon;
+
+    private string CurrentTitle => Mode switch
+    {
+        "pages" => "Pages",
+        "visitors" => "Visitors",
+        "map" => "Map",
+        "sources" => "Sources",
+        "technology" => "Technology",
+        "settings" => "Settings & data",
+        _ => "Overview"
+    };
+
+    private string CurrentDescription => Mode switch
+    {
+        "pages" => "Which pages are viewed, by how many people.",
+        "visitors" => "Every page view as it happens: who, from where, with what.",
+        "map" => "Where your visitors are, city by city.",
+        "sources" => "How visitors find the site: search engines, social networks, other sites.",
+        "technology" => "The browsers, operating systems and devices your visitors use.",
+        "settings" => "What is recorded, for how long, and how addresses are treated.",
+        _ => "Page views, visitors and sessions at a glance. Bots are excluded from every report."
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _active = await Analytics.GetActiveVisitorsAsync(5);
+        }
+        catch
+        {
+            _active = 0;
+        }
+    }
+
+    private void OnRangeChanged((string Preset, AnalyticsRange Range) change)
+    {
+        _preset = change.Preset;
+        _range = change.Range;
+    }
+}

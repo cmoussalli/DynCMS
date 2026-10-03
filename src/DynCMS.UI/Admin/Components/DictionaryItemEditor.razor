@@ -1,0 +1,226 @@
+@namespace DynCMS.UI.Admin.Components
+@inject IDictionaryService Dictionary
+@inject ILanguageService Languages
+@inject ToastService Toasts
+@inject NavigationManager Nav
+
+@if (_item is null)
+{
+    <div class="dc-workspace-empty">
+        @if (_loading)
+        {
+            <div class="dc-loading"><span class="dc-spinner"></span> Loading…</div>
+        }
+        else
+        {
+            <span class="dc-empty-tile"><Icon Name="alert" Size="32" /></span>
+            <h2>Dictionary item not found</h2>
+            <p>It may have been deleted.</p>
+            <a class="dc-btn" href="/admin/settings/dictionary">Back to the dictionary</a>
+        }
+    </div>
+}
+else
+{
+    <div class="dc-editor">
+        <header class="dc-editor-head">
+            <div class="dc-editor-title">
+                <span class="dc-editor-type"><Icon Name="book" Size="14" /> Dictionary item</span>
+                <input class="dc-editor-name dc-dict-key-input @(_keyInvalid ? "dc-invalid" : null)" type="text" value="@_item.Key" placeholder="Key, e.g. blog.readMore" spellcheck="false"
+                       @oninput="OnKeyInput" @onkeydown="OnKeyDown" />
+            </div>
+            <div class="dc-editor-status">
+                @if (!IsNew)
+                {
+                    <span class="dc-badge @(Translated == _languages.Count ? "dc-badge-success" : "dc-badge-warn")">@Translated of @_languages.Count language(s)</span>
+                }
+            </div>
+        </header>
+
+        <div class="dc-editor-body">
+            <div class="dc-form-grid">
+                <label class="dc-field">
+                    <span class="dc-label">Filed under</span>
+                    <select class="dc-input" value="@(_item.ParentId?.ToString() ?? string.Empty)" @onchange="OnParentChanged">
+                        <option value="">— Root —</option>
+                        @foreach (var candidate in ParentCandidates)
+                        {
+                            <option value="@candidate.Id" selected="@(candidate.Id == _item.ParentId)">@(new string('·', candidate.Level))@(candidate.Level > 0 ? " " : "")@candidate.Key</option>
+                        }
+                    </select>
+                    <small class="dc-muted">Only for organising the dictionary; the key alone identifies the item in templates.</small>
+                </label>
+                <div class="dc-field">
+                    <span class="dc-label">Use it in a template</span>
+                    <code class="dc-dict-usage">{{ '@(_item.Key)' | dictionary }}</code>
+                    <small class="dc-muted">Liquid — or <code>@("T(\"" + _item.Key + "\")")</code> in a Blazor template.</small>
+                </div>
+            </div>
+
+            <h3 class="dc-dict-heading"><Icon Name="globe" Size="16" /> Translations</h3>
+            @foreach (var l in _languages)
+            {
+                var own = _item.Get(l.IsoCode);
+                var fallback = own is null ? _item.Resolve(l.IsoCode, _languages) : null;
+                <label class="dc-field" @key="l.Id">
+                    <span class="dc-label">
+                        @l.Name <code>@l.IsoCode</code>
+                        @if (l.IsDefault)
+                        {
+                            <span class="dc-badge dc-badge-muted">default</span>
+                        }
+                    </span>
+                    <textarea class="dc-input" rows="2" placeholder="@Placeholder(l, fallback)" value="@own" @oninput="e => Set(l, e.Value?.ToString())" @onkeydown="OnKeyDown"></textarea>
+                    @if (own is null && fallback is not null)
+                    {
+                        <small class="dc-muted">Empty — pages in @l.Name show the fallback text: <em>@fallback</em></small>
+                    }
+                    else if (own is null && !l.IsDefault)
+                    {
+                        <small class="dc-muted">Empty — pages in @l.Name will print the key itself until a text exists in this or the default language.</small>
+                    }
+                </label>
+            }
+            @if (_languages.Count == 0)
+            {
+                <p class="dc-muted">Add a language under <a href="/admin/settings/languages">Settings → Languages</a> first.</p>
+            }
+        </div>
+
+        <footer class="dc-editor-foot">
+            @if (!IsNew)
+            {
+                <button type="button" class="dc-btn dc-btn-danger-ghost" disabled="@_busy" @onclick="() => _confirmDelete = true"><Icon Name="trash" Size="14" /> Delete</button>
+                <a class="dc-btn" href="/admin/settings/dictionary/new?parent=@_item.Id"><Icon Name="plus" Size="14" /> Add an item under this one</a>
+            }
+            <span class="dc-spacer"></span>
+            <a class="dc-btn" href="/admin/settings/dictionary">Cancel</a>
+            <button type="button" class="dc-btn dc-btn-primary" disabled="@(_busy || _keyInvalid)" @onclick="SaveAsync"><Icon Name="save" Size="14" /> Save</button>
+        </footer>
+    </div>
+
+    @if (_confirmDelete)
+    {
+        <ConfirmDialog Title="Delete dictionary item" Message="@DeleteMessage()" ConfirmText="Delete" Danger="true"
+                       OnConfirm="DeleteAsync" OnCancel="() => _confirmDelete = false" />
+    }
+}
+
+@code {
+    /// <summary>The item to edit, or null for a new one.</summary>
+    [Parameter] public Guid? Id { get; set; }
+
+    /// <summary>For a new item: the item to file it under.</summary>
+    [Parameter] public Guid? ParentId { get; set; }
+
+    [Parameter] public EventCallback OnSaved { get; set; }
+    [Parameter] public EventCallback OnDeleted { get; set; }
+
+    private DictionaryItem? _item;
+    private IReadOnlyList<DictionaryItem> _all = [];
+    private IReadOnlyList<Language> _languages = [];
+    private bool _loading = true;
+    private bool _busy;
+    private bool _confirmDelete;
+
+    private bool IsNew => Id is null;
+    private bool _keyInvalid => string.IsNullOrWhiteSpace(_item?.Key);
+    private int Translated => _item is null ? 0 : _languages.Count(l => _item.HasTranslation(l.IsoCode));
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        _languages = await Languages.GetAllAsync();
+        _all = await Dictionary.GetAllAsync();
+        _item = Id is Guid id
+            ? await Dictionary.GetAsync(id)
+            : new DictionaryItem { ParentId = ParentId is Guid p && _all.Any(i => i.Id == p) ? p : null };
+        _loading = false;
+    }
+
+    /// <summary>Every item except this one and the ones filed under it (they cannot become its parent).</summary>
+    private IEnumerable<DictionaryItem> ParentCandidates
+    {
+        get
+        {
+            if (_item is null) return [];
+            var excluded = new HashSet<Guid> { _item.Id };
+            foreach (var i in _all)
+            {
+                // Items are in tree order, so a parent is always seen before its children.
+                if (i.ParentId is { } p && excluded.Contains(p)) excluded.Add(i.Id);
+            }
+            return _all.Where(i => !excluded.Contains(i.Id));
+        }
+    }
+
+    private static string Placeholder(Language l, string? fallback) =>
+        fallback is not null ? $"Falls back to: {fallback}" : $"Text in {l.Name}";
+
+    private void OnKeyInput(ChangeEventArgs e) => _item!.Key = e.Value?.ToString() ?? string.Empty;
+
+    private void OnParentChanged(ChangeEventArgs e) =>
+        _item!.ParentId = Guid.TryParse(e.Value?.ToString(), out var g) ? g : null;
+
+    private void Set(Language l, string? text) => _item!.Set(l.IsoCode, text);
+
+    private Task OnKeyDown(KeyboardEventArgs e) =>
+        e.CtrlKey && e.Key is "s" or "S" && !_busy && !_keyInvalid ? SaveAsync() : Task.CompletedTask;
+
+    private async Task SaveAsync()
+    {
+        if (_item is null || _keyInvalid) return;
+        _busy = true;
+        try
+        {
+            var wasNew = IsNew;
+            var saved = await Dictionary.SaveAsync(_item);
+            Toasts.Success(wasNew ? "Dictionary item created" : "Dictionary item saved", saved.Key);
+            await OnSaved.InvokeAsync();
+            if (wasNew) Nav.NavigateTo($"/admin/settings/dictionary/{saved.Id}");
+            else _item = saved;
+            _all = await Dictionary.GetAllAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            Toasts.Error(ex, "Dictionary");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private string DeleteMessage()
+    {
+        var below = 0;
+        var ids = new HashSet<Guid> { _item!.Id };
+        foreach (var i in _all)
+        {
+            if (i.ParentId is { } p && ids.Contains(p)) { ids.Add(i.Id); below++; }
+        }
+        var what = below > 0 ? $"'{_item.Key}' and the {below} item(s) filed under it" : $"'{_item.Key}'";
+        return $"Delete {what}? Templates that print the key will show the key itself. This cannot be undone.";
+    }
+
+    private async Task DeleteAsync()
+    {
+        _confirmDelete = false;
+        if (_item is null) return;
+        _busy = true;
+        try
+        {
+            await Dictionary.DeleteAsync(_item.Id);
+            Toasts.Info("Dictionary item deleted", _item.Key);
+            await OnDeleted.InvokeAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            Toasts.Error(ex, "Dictionary");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

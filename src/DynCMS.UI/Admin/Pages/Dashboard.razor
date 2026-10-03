@@ -1,0 +1,155 @@
+@page "/admin"
+@namespace DynCMS.UI.Admin.Pages
+@inject IContentService Content
+@inject IContentTypeService ContentTypes
+@inject IMediaService Media
+@inject ICmsIdentity Identity
+@inject ITemplateRegistry Templates
+@inject DynCMS.Core.Analytics.IAnalyticsService Analytics
+
+<PageTitle>Dashboard · DynCMS</PageTitle>
+
+<div class="dc-page">
+    <header class="dc-hero">
+        <div>
+            <span class="dc-eyebrow">@DateTime.Now.ToString("dddd, d MMMM yyyy")</span>
+            <h1>@Greeting@(string.IsNullOrEmpty(_userName) ? "" : $", {_userName}")</h1>
+            <p>Here's what's happening across your site.</p>
+        </div>
+        <div class="dc-hero-actions">
+            <a class="dc-btn" href="/admin/media"><Icon Name="upload" Size="15" /> Upload media</a>
+            <a class="dc-btn dc-btn-primary" href="/admin/content"><Icon Name="plus" Size="15" /> New content</a>
+        </div>
+    </header>
+
+    <div class="dc-stats">
+        <a class="dc-stat" href="/admin/content"><span class="dc-stat-tile"><Icon Name="document" Size="20" /></span><strong>@_content</strong><span>Content items</span></a>
+        <a class="dc-stat dc-stat-green" href="/admin/content"><span class="dc-stat-tile"><Icon Name="globe" Size="20" /></span><strong>@_published</strong><span>Published</span></a>
+        <a class="dc-stat dc-stat-rose" href="/admin/media"><span class="dc-stat-tile"><Icon Name="image" Size="20" /></span><strong>@_media</strong><span>Media files</span></a>
+        <a class="dc-stat dc-stat-violet" href="/admin/settings/document-types"><span class="dc-stat-tile"><Icon Name="box" Size="20" /></span><strong>@_types</strong><span>Document types</span></a>
+        <a class="dc-stat dc-stat-amber" href="/admin/settings/templates"><span class="dc-stat-tile"><Icon Name="layout" Size="20" /></span><strong>@Templates.All.Count</strong><span>Templates</span></a>
+        <a class="dc-stat" href="/admin/analytics" title="@(_visitors7.ToString("N0")) unique visitors in the last 7 days"><span class="dc-stat-tile"><Icon Name="bar-chart" Size="20" /></span><strong>@_views7.ToString("N0")</strong><span>Views · 7 days</span></a>
+        <AuthorizeView Roles="@CmsRoles.Admin">
+            <a class="dc-stat dc-stat-teal" href="/admin/users"><span class="dc-stat-tile"><Icon Name="users" Size="20" /></span><strong>@_users</strong><span>Users</span></a>
+        </AuthorizeView>
+    </div>
+
+    <div class="dc-dash-grid">
+        <section class="dc-card">
+            <div class="dc-card-head">
+                <h3><Icon Name="clock" Size="16" /> Recently edited</h3>
+                <a href="/admin/content">Open content <Icon Name="arrow-right" Size="13" /></a>
+            </div>
+            @if (_recent.Count == 0)
+            {
+                <div class="dc-empty">
+                    <Icon Name="document" Size="28" />
+                    <p>Nothing here yet. Create your first content item to see it show up here.</p>
+                    <a class="dc-btn dc-btn-sm dc-btn-primary" href="/admin/content"><Icon Name="plus" Size="14" /> Create content</a>
+                </div>
+            }
+            <ul class="dc-recent">
+                @foreach (var n in _recent)
+                {
+                    <li>
+                        <span class="dc-recent-tile"><Icon Name="@n.ContentType.Icon" Size="16" /></span>
+                        <span class="dc-recent-text">
+                            <a href="/admin/content/@n.Id">@n.Name</a>
+                            <small>@n.ContentType.Name · edited @Ago(n.UpdatedAt)</small>
+                        </span>
+                        <span class="dc-badge @(n.IsPublished ? (n.HasPendingChanges ? "dc-badge-warn" : "dc-badge-success") : "dc-badge-muted")">
+                            @(n.IsPublished ? (n.HasPendingChanges ? "Pending" : "Published") : "Draft")
+                        </span>
+                    </li>
+                }
+            </ul>
+        </section>
+
+        <div class="dc-dash-col">
+            <section class="dc-card">
+                <h3><Icon Name="activity" Size="16" /> Publishing</h3>
+                <div class="dc-progress-row">
+                    <strong>@PublishedPercent%</strong>
+                    <span class="dc-muted">@_published of @_content published</span>
+                </div>
+                <div class="dc-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="@PublishedPercent">
+                    <span style="width:@(PublishedPercent)%"></span>
+                </div>
+                <div class="dc-legend">
+                    <span><i style="background:var(--dc-primary)"></i> Published @_published</span>
+                    <span><i style="background:var(--dc-border-strong)"></i> Draft @(_content - _published)</span>
+                </div>
+            </section>
+
+            <section class="dc-card">
+                <div class="dc-card-head">
+                    <h3><Icon Name="zap" Size="16" /> Getting started</h3>
+                    <span class="dc-steps-progress">@StepsDone / 4</span>
+                </div>
+                <ol class="dc-steps">
+                    <li class="@(_types > 0 ? "dc-done" : null)"><Icon Name="@(_types > 0 ? "check-circle" : "circle")" Size="18" /><span><a href="/admin/settings/document-types/new">Define a document type</a> with the properties your pages need.</span></li>
+                    <li class="@(_content > 0 ? "dc-done" : null)"><Icon Name="@(_content > 0 ? "check-circle" : "circle")" Size="18" /><span><a href="/admin/content">Create content</a> in the tree and fill in the properties.</span></li>
+                    <li class="@(_media > 0 ? "dc-done" : null)"><Icon Name="@(_media > 0 ? "check-circle" : "circle")" Size="18" /><span><a href="/admin/media">Upload media</a> and pick it from media picker properties.</span></li>
+                    <li class="@(_published > 0 ? "dc-done" : null)"><Icon Name="@(_published > 0 ? "check-circle" : "circle")" Size="18" /><span>Publish the content and <a href="/" target="_blank" rel="noopener">view the site</a>.</span></li>
+                </ol>
+            </section>
+        </div>
+    </div>
+</div>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private int _content, _published, _media, _types, _users;
+    private long _views7, _visitors7;
+    private IReadOnlyList<ContentNode> _recent = [];
+    private string? _userName;
+
+    private int PublishedPercent => _content == 0 ? 0 : (int)Math.Round(100.0 * _published / _content);
+    private int StepsDone => (_types > 0 ? 1 : 0) + (_content > 0 ? 1 : 0) + (_media > 0 ? 1 : 0) + (_published > 0 ? 1 : 0);
+
+    private static string Greeting => DateTime.Now.Hour switch
+    {
+        < 5 => "Good night",
+        < 12 => "Good morning",
+        < 18 => "Good afternoon",
+        _ => "Good evening"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is not null)
+        {
+            var state = await AuthState;
+            _userName = state.User.Identity?.Name;
+        }
+
+        _content = await Content.CountAsync();
+        _published = await Content.CountAsync(published: true);
+        _media = await Media.CountAsync();
+        _types = (await ContentTypes.GetAllAsync()).Count;
+        _users = Identity.CountUsers();
+        _recent = await Content.GetRecentAsync(8);
+
+        try
+        {
+            var week = await Analytics.GetSummaryAsync(DynCMS.Core.Analytics.AnalyticsRange.LastDays(7));
+            _views7 = week.PageViews;
+            _visitors7 = week.Visitors;
+        }
+        catch
+        {
+            // Analytics tables may not exist yet on a database that predates them; the tile just shows 0.
+        }
+    }
+
+    private static string Ago(DateTime utc)
+    {
+        var span = DateTime.UtcNow - utc;
+        if (span.TotalSeconds < 60) return "just now";
+        if (span.TotalMinutes < 60) return $"{(int)span.TotalMinutes} min ago";
+        if (span.TotalHours < 24) return $"{(int)span.TotalHours} h ago";
+        if (span.TotalDays < 7) return $"{(int)span.TotalDays} d ago";
+        return utc.ToLocalTime().ToString("d MMM yyyy");
+    }
+}

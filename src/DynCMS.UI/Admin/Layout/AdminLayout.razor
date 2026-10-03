@@ -1,0 +1,93 @@
+@namespace DynCMS.UI.Admin.Layout
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject IPluginManager Plugins
+
+<HeadContent>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
+    <link rel="stylesheet" href="@DynCmsUi.AdminStylesheet" />
+</HeadContent>
+
+<div class="dc-shell">
+    <header class="dc-topbar">
+        <a class="dc-brand" href="@DynCmsUi.AdminBasePath" title="DynCMS dashboard">
+            <span class="dc-brand-mark">D</span>
+            <span class="dc-brand-text"><strong>DynCMS</strong><span>Back office</span></span>
+        </a>
+
+        <nav class="dc-nav" aria-label="Sections">
+            <NavLink href="@DynCmsUi.AdminBasePath" Match="NavLinkMatch.All" title="Dashboard"><Icon Name="grid" Size="17" /><span>Dashboard</span></NavLink>
+            <NavLink href="/admin/content" title="Content"><Icon Name="document" Size="17" /><span>Content</span></NavLink>
+            <NavLink href="/admin/media" title="Media"><Icon Name="image" Size="17" /><span>Media</span></NavLink>
+            <NavLink href="/admin/analytics" title="Analytics"><Icon Name="bar-chart" Size="17" /><span>Analytics</span></NavLink>
+            @foreach (var item in PluginMenu)
+            {
+                @if (string.IsNullOrWhiteSpace(item.Roles))
+                {
+                    <NavLink href="@item.Url" title="@item.Title" @key="item"><Icon Name="@item.Icon" Size="17" /><span>@item.Title</span></NavLink>
+                }
+                else
+                {
+                    <AuthorizeView Roles="@item.Roles" @key="item">
+                        <NavLink href="@item.Url" title="@item.Title"><Icon Name="@item.Icon" Size="17" /><span>@item.Title</span></NavLink>
+                    </AuthorizeView>
+                }
+            }
+            <span class="dc-nav-sep" aria-hidden="true"></span>
+            <NavLink href="/admin/settings" title="Settings"><Icon Name="settings" Size="17" /><span>Settings</span></NavLink>
+            <AuthorizeView Roles="@CmsRoles.Admin">
+                <NavLink href="/admin/users" title="Users &amp; security"><Icon Name="shield" Size="17" /><span>Users</span></NavLink>
+                <NavLink href="/admin/data" title="Data"><Icon Name="database" Size="17" /><span>Data</span></NavLink>
+                <NavLink href="/admin/system" title="Application and database version"><Icon Name="info" Size="17" /><span>System</span></NavLink>
+            </AuthorizeView>
+        </nav>
+
+        <div class="dc-topbar-end">
+            <a class="dc-side-link" href="/" target="_blank" rel="noopener" title="View site">
+                <Icon Name="globe" Size="17" /><span>View site</span><Icon Name="external" Size="13" Class="dc-icon-end" />
+            </a>
+            <AuthorizeView>
+                <div class="dc-user-card">
+                    <span class="dc-avatar" aria-hidden="true">@Initials(context.User.Identity?.Name)</span>
+                    <span class="dc-user-text">
+                        <strong>@context.User.Identity?.Name</strong>
+                        <span>@(context.User.IsInRole(CmsRoles.Admin) ? "Administrator" : "Editor")</span>
+                    </span>
+                    <a class="dc-btn dc-btn-icon" href="/admin/logout" title="Sign out"><Icon Name="logout" Size="16" /></a>
+                </div>
+            </AuthorizeView>
+        </div>
+    </header>
+
+    <div class="dc-main">
+        @Body
+    </div>
+    <ToastHost />
+</div>
+
+@code {
+    // Links running plugins add to the top bar (Settings-placed items are listed in the Settings tree).
+    private IEnumerable<PluginMenuItem> PluginMenu => Plugins.Plugins
+        .Where(p => p.IsRunning)
+        .SelectMany(p => p.MenuItems)
+        .Where(m => m.Placement == PluginMenuPlacement.Main)
+        .OrderBy(m => m.Order).ThenBy(m => m.Title, StringComparer.OrdinalIgnoreCase);
+
+    protected override void OnInitialized() => Plugins.Changed += OnPluginsChanged;
+
+    private void OnPluginsChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Plugins.Changed -= OnPluginsChanged;
+
+    private static string Initials(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "?";
+        var parts = name.Split([' ', '.', '_', '-'], StringSplitOptions.RemoveEmptyEntries);
+        var initials = parts.Length >= 2
+            ? $"{parts[0][0]}{parts[1][0]}"
+            : name.Length >= 2 ? name[..2] : name;
+        return initials.ToUpperInvariant();
+    }
+}

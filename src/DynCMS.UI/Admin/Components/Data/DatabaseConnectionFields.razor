@@ -1,0 +1,118 @@
+@namespace DynCMS.UI.Admin.Components
+@using DynCMS.Core.Data
+@inject DynCmsPaths Paths
+
+@*
+    The connection part of a database form (target, engine, file or server fields), shared by the analytics database
+    panel of the Data tab and the analytics option of the setup page. The primary forms predate it and keep their own markup.
+*@
+@if (ShowMode)
+{
+    <span class="dc-label">Target</span>
+    <div class="dc-setup-options">
+        <button type="button" class="dc-setup-option @(Request.Mode == DatabaseSetupMode.ExistingDatabase ? "dc-active" : "")" @onclick="() => SetMode(DatabaseSetupMode.ExistingDatabase)" disabled="@Busy">
+            <Icon Name="layers" Size="20" />
+            <strong>Use an existing database</strong>
+            <span>Connect to a database that already exists. The analytics tables are added if they are missing.</span>
+            @if (Request.Mode == DatabaseSetupMode.ExistingDatabase) { <Icon Name="check-circle" Size="16" Class="dc-setup-check" /> }
+        </button>
+        <button type="button" class="dc-setup-option @(Request.Mode == DatabaseSetupMode.NewDatabase ? "dc-active" : "")" @onclick="() => SetMode(DatabaseSetupMode.NewDatabase)" disabled="@Busy">
+            <Icon Name="sparkles" Size="20" />
+            <strong>Create a new database</strong>
+            <span>Start empty. DynCMS creates the database and the analytics tables for you.</span>
+            @if (Request.Mode == DatabaseSetupMode.NewDatabase) { <Icon Name="check-circle" Size="16" Class="dc-setup-check" /> }
+        </button>
+    </div>
+}
+
+<span class="dc-label">Engine</span>
+<div class="dc-setup-options">
+    <button type="button" class="dc-setup-option @(Request.Provider == DatabaseProvider.Sqlite ? "dc-active" : "")" @onclick="() => SetProvider(DatabaseProvider.Sqlite)" disabled="@Busy">
+        <Icon Name="file" Size="20" />
+        <strong>SQLite</strong>
+        <span>A single file inside the application folder.</span>
+        @if (Request.Provider == DatabaseProvider.Sqlite) { <Icon Name="check-circle" Size="16" Class="dc-setup-check" /> }
+    </button>
+    <button type="button" class="dc-setup-option @(Request.Provider == DatabaseProvider.SqlServer ? "dc-active" : "")" @onclick="() => SetProvider(DatabaseProvider.SqlServer)" disabled="@Busy">
+        <Icon Name="server" Size="20" />
+        <strong>SQL Server</strong>
+        <span>Microsoft SQL Server or Azure SQL, SQL authentication.</span>
+        @if (Request.Provider == DatabaseProvider.SqlServer) { <Icon Name="check-circle" Size="16" Class="dc-setup-check" /> }
+    </button>
+</div>
+
+@if (Request.Provider == DatabaseProvider.Sqlite)
+{
+    <label class="dc-field">
+        <span class="dc-label">Database file</span>
+        <input class="dc-input" type="text" @bind="Request.SqlitePath" @bind:after="Changed" placeholder="App_Data/dyncms-analytics.db" disabled="@Busy" />
+        <small class="dc-setup-path">@ResolvedSqlitePath</small>
+        <small class="dc-muted">
+            @(Request.Mode == DatabaseSetupMode.NewDatabase
+                ? "Relative paths are inside the application root. The file must not exist yet."
+                : "Relative paths are inside the application root. Point this at the existing .db file.")
+        </small>
+    </label>
+}
+else
+{
+    <div class="dc-form-grid">
+        <label class="dc-field">
+            <span class="dc-label">Server</span>
+            <input class="dc-input" type="text" @bind="Request.Server" @bind:after="Changed" placeholder="localhost or server\instance" disabled="@Busy" />
+        </label>
+        <label class="dc-field">
+            <span class="dc-label">Port</span>
+            <input class="dc-input" type="number" min="1" max="65535" @bind="Request.Port" @bind:after="Changed" disabled="@Busy" />
+        </label>
+        <div class="dc-field">
+            <label class="dc-label" for="@(IdPrefix)-database">Database name</label>
+            <input id="@(IdPrefix)-database" class="dc-input" type="text" @bind="Request.Database" @bind:after="Changed" placeholder="DynCMS_Analytics" disabled="@Busy" />
+            @if (Request.Mode == DatabaseSetupMode.NewDatabase)
+            {
+                <label class="dc-check">
+                    <input type="checkbox" @bind="Request.CreateDatabase" @bind:after="Changed" disabled="@Busy" />
+                    <span>Create the database if it does not exist (uses the master database)</span>
+                </label>
+            }
+        </div>
+        <div class="dc-field">
+            <span class="dc-label">Trust server certificate</span>
+            <label class="dc-toggle dc-setup-toggle">
+                <input type="checkbox" @bind="Request.TrustServerCertificate" @bind:after="Changed" disabled="@Busy" />
+                <span class="dc-toggle-track"><span class="dc-toggle-thumb"></span></span>
+                <span>@(Request.TrustServerCertificate ? "Accept self-signed certificates" : "Require a trusted certificate")</span>
+            </label>
+        </div>
+        <label class="dc-field">
+            <span class="dc-label">User</span>
+            <input class="dc-input" type="text" @bind="Request.UserName" @bind:after="Changed" autocomplete="off" placeholder="sa" disabled="@Busy" />
+        </label>
+        <label class="dc-field">
+            <span class="dc-label">Password</span>
+            <input class="dc-input" type="password" @bind="Request.Password" @bind:after="Changed" autocomplete="new-password" disabled="@Busy" />
+        </label>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public DatabaseSetupRequest Request { get; set; } = new();
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public bool ShowMode { get; set; } = true;
+    [Parameter] public string IdPrefix { get; set; } = "dc-db";
+    /// <summary>Raised after any field changed, so the host can clear a stale test result.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private string ResolvedSqlitePath
+    {
+        get
+        {
+            try { return Path.GetFullPath(Path.Combine(Paths.BasePath, Request.SqlitePath.Trim())); }
+            catch { return string.Empty; }
+        }
+    }
+
+    private Task SetMode(DatabaseSetupMode mode) { Request.Mode = mode; return Changed(); }
+    private Task SetProvider(DatabaseProvider provider) { Request.Provider = provider; return Changed(); }
+    private Task Changed() => OnChanged.InvokeAsync();
+}

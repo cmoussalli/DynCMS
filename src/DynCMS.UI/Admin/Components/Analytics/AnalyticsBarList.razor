@@ -1,0 +1,73 @@
+@namespace DynCMS.UI.Admin.Components.Analytics
+
+@*
+    A ranked list with a proportional bar behind each row: the workhorse of every report card
+    (top pages, countries, browsers…). Value is right-aligned; an optional visitors column follows.
+*@
+@if (Items.Count == 0)
+{
+    <div class="dc-an-empty"><Icon Name="@(EmptyIcon)" Size="22" /><span>@EmptyText</span></div>
+}
+else
+{
+    <div class="dc-an-bars">
+        @if (ShowHeader)
+        {
+            <div class="dc-an-bar-head">
+                <span>@Heading</span>
+                <span class="dc-num">@ValueHeading</span>
+                @if (ShowVisitors) { <span class="dc-num">Visitors</span> }
+                @if (ShowShare) { <span class="dc-num">%</span> }
+            </div>
+        }
+        @foreach (var item in Items)
+        {
+            var width = _max == 0 ? 0 : 100.0 * item.Value / _max;
+            <div class="dc-an-bar-row" title="@(item.Detail ?? item.Label)">
+                <span class="dc-an-bar-label">
+                    <i class="dc-an-bar-fill" style="width:@width.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)%"></i>
+                    <span class="dc-an-bar-text">
+                        @if (item.Prefix is not null) { <span class="dc-an-flag">@item.Prefix</span> }
+                        else if (item.Icon is not null) { <Icon Name="@item.Icon" Size="14" /> }
+                        @if (item.Href is not null)
+                        {
+                            <a href="@item.Href">@item.Label</a>
+                        }
+                        else
+                        {
+                            <span>@item.Label</span>
+                        }
+                        @if (item.Badge is not null) { <span class="dc-badge @(item.BadgeClass ?? "dc-badge-muted")">@item.Badge</span> }
+                        @if (item.Detail is not null && ShowDetail) { <small>@item.Detail</small> }
+                    </span>
+                </span>
+                <span class="dc-num">@AnalyticsFormat.Number(item.Value)</span>
+                @if (ShowVisitors) { <span class="dc-num dc-muted">@(item.Visitors is { } v ? AnalyticsFormat.Number(v) : "—")</span> }
+                @if (ShowShare) { <span class="dc-num dc-muted">@AnalyticsFormat.Share(item.Value, _total)</span> }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public IReadOnlyList<AnalyticsBarItem> Items { get; set; } = [];
+    [Parameter] public string Heading { get; set; } = "Name";
+    [Parameter] public string ValueHeading { get; set; } = "Views";
+    [Parameter] public bool ShowHeader { get; set; } = true;
+    [Parameter] public bool ShowVisitors { get; set; }
+    [Parameter] public bool ShowShare { get; set; }
+    [Parameter] public bool ShowDetail { get; set; }
+    /// <summary>Total the share column is computed against; defaults to the sum of the rows.</summary>
+    [Parameter] public long? Total { get; set; }
+    [Parameter] public string EmptyText { get; set; } = "Nothing recorded for this period.";
+    [Parameter] public string EmptyIcon { get; set; } = "bar-chart";
+
+    private long _max;
+    private long _total;
+
+    protected override void OnParametersSet()
+    {
+        _max = Items.Count == 0 ? 0 : Items.Max(i => i.Value);
+        _total = Total ?? Items.Sum(i => i.Value);
+    }
+}

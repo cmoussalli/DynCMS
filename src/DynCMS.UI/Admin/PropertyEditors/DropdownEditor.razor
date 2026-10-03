@@ -1,0 +1,21 @@
+@namespace DynCMS.UI.Admin.PropertyEditors
+@inherits PropertyEditorBase
+
+<select id="@InputId" class="@InputClass dc-input-narrow" value="@(Value ?? string.Empty)" @onchange="e => SetValueAsync(NullIfEmpty(e.Value?.ToString()))">
+    <option value="">— Select —</option>
+    @foreach (var item in Items)
+    {
+        <option value="@item" selected="@(item == Value)">@item</option>
+    }
+    @if (!string.IsNullOrEmpty(Value) && !Items.Contains(Value))
+    {
+        <option value="@Value" selected>@Value (no longer an option)</option>
+    }
+</select>
+
+@code {
+    private string[] Items => (Config("items") ?? string.Empty)
+        .Split(['\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    private static string? NullIfEmpty(string? s) => string.IsNullOrEmpty(s) ? null : s;
+}

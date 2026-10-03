@@ -1,0 +1,121 @@
+@page "/admin/data"
+@page "/admin/data/{View}"
+@namespace DynCMS.UI.Admin.Pages
+@attribute [Authorize(Roles = CmsRoles.Admin)]
+@inject IDatabaseMaintenanceService Maintenance
+@inject IDynCmsRuntime Runtime
+@inject DatabaseConfigurationStore Store
+
+<PageTitle>Data · DynCMS</PageTitle>
+
+<div class="dc-section">
+    <aside class="dc-tree-panel">
+        <div class="dc-panel-head">
+            <h2><span class="dc-panel-icon"><Icon Name="database" Size="15" /></span> Data</h2>
+        </div>
+        <div class="dc-tree">
+            <div class="dc-tree-group">
+                <div class="dc-tree-group-head"><span><Icon Name="hard-drive" Size="14" /> Primary database</span></div>
+                <ul class="dc-tree-list">
+                    <li class="dc-tree-item">
+                        <div class="dc-tree-row @(Mode == "overview" ? "dc-selected" : null)" style="padding-left:10px">
+                            <a class="dc-tree-link" href="/admin/data"><Icon Name="activity" Size="15" /><span class="dc-tree-name">Overview</span></a>
+                        </div>
+                    </li>
+                    <li class="dc-tree-item">
+                        <div class="dc-tree-row @(Mode == "configuration" ? "dc-selected" : null)" style="padding-left:10px">
+                            <a class="dc-tree-link" href="/admin/data/configuration"><Icon Name="sliders" Size="15" /><span class="dc-tree-name">Configuration</span></a>
+                        </div>
+                    </li>
+                    <li class="dc-tree-item">
+                        <div class="dc-tree-row @(Mode == "backups" ? "dc-selected" : null)" style="padding-left:10px">
+                            <a class="dc-tree-link" href="/admin/data/backups"><Icon Name="save" Size="15" /><span class="dc-tree-name">Backups &amp; restore</span>@if (_backupCount is int n) { <small>@n</small> }</a>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+            <div class="dc-tree-group">
+                <div class="dc-tree-group-head"><span><Icon Name="bar-chart" Size="14" /> Analytics database</span></div>
+                <ul class="dc-tree-list">
+                    <li class="dc-tree-item">
+                        <div class="dc-tree-row @(Mode == "analytics" ? "dc-selected" : null)" style="padding-left:10px">
+                            <a class="dc-tree-link" href="/admin/data/analytics"><Icon Name="sliders" Size="15" /><span class="dc-tree-name">Configuration</span>@if (!Store.IsAnalyticsSeparate) { <small class="dc-badge dc-badge-muted">shared</small> }</a>
+                        </div>
+                    </li>
+                    <li class="dc-tree-item">
+                        <div class="dc-tree-row @(Mode == "analytics-backups" ? "dc-selected" : null)" style="padding-left:10px">
+                            <a class="dc-tree-link" href="/admin/data/analytics-backups"><Icon Name="save" Size="15" /><span class="dc-tree-name">Backups &amp; restore</span>@if (_analyticsBackupCount is int a) { <small>@a</small> }</a>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+            <div class="dc-tree-group">
+                <div class="dc-tree-group-head"><span><Icon Name="alert" Size="14" /> Danger zone</span></div>
+                <ul class="dc-tree-list">
+                    <li class="dc-tree-item">
+                        <div class="dc-tree-row @(Mode == "reset" ? "dc-selected" : null)" style="padding-left:10px">
+                            <a class="dc-tree-link" href="/admin/data/reset"><Icon Name="rotate-ccw" Size="15" /><span class="dc-tree-name">Reset configuration</span></a>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </aside>
+
+    <main class="dc-workspace">
+        @switch (Mode)
+        {
+            case "configuration":
+                <DataConfiguration />
+                break;
+            case "backups":
+                <DataBackups OnChanged="RefreshCountAsync" />
+                break;
+            case "analytics":
+                <DataAnalyticsConfiguration OnChanged="RefreshCountAsync" />
+                break;
+            case "analytics-backups":
+                <DataBackups Role="DatabaseRole.Analytics" OnChanged="RefreshCountAsync" />
+                break;
+            case "reset":
+                <DataReset />
+                break;
+            default:
+                <DataOverview OnChanged="RefreshCountAsync" />
+                break;
+        }
+    </main>
+</div>
+
+@code {
+    [Parameter] public string? View { get; set; }
+
+    private int? _backupCount;
+    private int? _analyticsBackupCount;
+
+    private string Mode => (View ?? string.Empty).ToLowerInvariant() switch
+    {
+        "configuration" or "config" => "configuration",
+        "backups" or "backup" => "backups",
+        "analytics" => "analytics",
+        "analytics-backups" or "analytics-backup" => "analytics-backups",
+        "reset" => "reset",
+        _ => "overview"
+    };
+
+    protected override Task OnInitializedAsync() => RefreshCountAsync();
+
+    private async Task RefreshCountAsync()
+    {
+        try
+        {
+            _backupCount = (await Maintenance.ListBackupsAsync()).Count;
+            _analyticsBackupCount = Store.IsAnalyticsSeparate ? (await Maintenance.ListBackupsAsync(DatabaseRole.Analytics)).Count : null;
+        }
+        catch
+        {
+            _backupCount = null;
+            _analyticsBackupCount = null;
+        }
+    }
+}

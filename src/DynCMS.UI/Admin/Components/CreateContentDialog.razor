@@ -1,0 +1,102 @@
+@namespace DynCMS.UI.Admin.Components
+@inject IContentService Content
+@inject ToastService Toasts
+
+<Modal Title="@(_parent is null ? "Create content at the root" : $"Create under \"{_parent.Name}\"")" OnClose="OnCancel">
+    <ChildContent>
+        @if (_types is null)
+        {
+            <div class="dc-loading"><span class="dc-spinner"></span> Loading…</div>
+        }
+        else if (_types.Count == 0)
+        {
+            <div class="dc-empty">
+                <Icon Name="alert" Size="24" />
+                <p>
+                    @(_parent is null
+                        ? "No document type is allowed at the root. Enable \"Allow as root\" on a document type first."
+                        : $"\"{_parent.ContentType.Name}\" does not allow any child document types.")
+                </p>
+                <a class="dc-btn" href="/admin/settings/document-types">Open document types</a>
+            </div>
+        }
+        else if (_selected is null)
+        {
+            <p class="dc-muted" style="margin-bottom:12px">Choose a document type for the new item.</p>
+            <div class="dc-type-grid">
+                @foreach (var t in _types)
+                {
+                    <button type="button" class="dc-type-card" @onclick="() => _selected = t">
+                        <Icon Name="@t.Icon" Size="22" />
+                        <strong>@t.Name</strong>
+                        @if (!string.IsNullOrWhiteSpace(t.Description))
+                        {
+                            <span>@t.Description</span>
+                        }
+                    </button>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="dc-selected-type">
+                <Icon Name="@_selected.Icon" Size="18" /> <strong>@_selected.Name</strong>
+                @if (_types.Count > 1)
+                {
+                    <button type="button" class="dc-link" @onclick="() => _selected = null">change</button>
+                }
+            </div>
+            <label class="dc-field">
+                <span class="dc-label">Name</span>
+                <input class="dc-input" type="text" @bind="_name" @bind:event="oninput" @onkeyup="OnKeyUp" placeholder="Enter a name" autofocus />
+            </label>
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="dc-btn" @onclick="OnCancel">Cancel</button>
+        <button type="button" class="dc-btn dc-btn-primary" disabled="@(_selected is null || string.IsNullOrWhiteSpace(_name) || _busy)" @onclick="CreateAsync">
+            <Icon Name="plus" Size="14" /> Create
+        </button>
+    </Footer>
+</Modal>
+
+@code {
+    [Parameter] public Guid? ParentId { get; set; }
+    [Parameter] public EventCallback<ContentNode> OnCreated { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private ContentNode? _parent;
+    private IReadOnlyList<ContentType>? _types;
+    private ContentType? _selected;
+    private string? _name;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _parent = ParentId is Guid id ? await Content.GetAsync(id) : null;
+        _types = await Content.GetAllowedChildTypesAsync(ParentId);
+        if (_types.Count == 1) _selected = _types[0];
+    }
+
+    private Task OnKeyUp(KeyboardEventArgs e) => e.Key == "Enter" ? CreateAsync() : Task.CompletedTask;
+
+    private async Task CreateAsync()
+    {
+        if (_selected is null || string.IsNullOrWhiteSpace(_name) || _busy) return;
+        _busy = true;
+        try
+        {
+            var node = await Content.CreateAsync(_selected.Id, ParentId, _name);
+            Toasts.Success("Content created", node.Name);
+            await OnCreated.InvokeAsync(node);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Toasts.Error(ex, "Could not create content");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

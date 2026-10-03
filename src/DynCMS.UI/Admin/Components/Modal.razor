@@ -1,0 +1,31 @@
+@namespace DynCMS.UI.Admin.Components
+
+<div class="dc-modal-backdrop" @onclick="CloseAsync">
+    <div class="dc-modal dc-modal-@Size.ToString().ToLowerInvariant()" role="dialog" aria-modal="true" @onclick:stopPropagation="true">
+        <div class="dc-modal-header">
+            <h3>@Title</h3>
+            <button type="button" class="dc-btn dc-btn-icon" title="Close" @onclick="CloseAsync"><Icon Name="x" /></button>
+        </div>
+        <div class="dc-modal-body">
+            @ChildContent
+        </div>
+        @if (Footer is not null)
+        {
+            <div class="dc-modal-footer">
+                @Footer
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    public enum ModalSize { Small, Medium, Large }
+
+    [Parameter] public string Title { get; set; } = string.Empty;
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? Footer { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public ModalSize Size { get; set; } = ModalSize.Medium;
+
+    private Task CloseAsync() => OnClose.InvokeAsync();
+}

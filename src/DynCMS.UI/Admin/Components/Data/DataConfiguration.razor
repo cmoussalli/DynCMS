@@ -1,0 +1,293 @@
+@namespace DynCMS.UI.Admin.Components
+@using DynCMS.Core.Data
+@inject IDatabaseMaintenanceService Maintenance
+@inject IDatabaseSetupService Setup
+@inject DatabaseConfigurationStore Store
+@inject DynCmsPaths Paths
+@inject ToastService Toasts
+@inject NavigationManager Nav
+
+<div class="dc-page dc-data-section">
+    <header class="dc-page-head">
+        <h1><Icon Name="sliders" Size="22" /> Database configuration</h1>
+        <p class="dc-muted">
+            These settings live in <code>@Store.FilePath</code>. Saving switches the running application to the new
+            database without a restart: its schema is created if missing, and startup tasks run again for it.
+        </p>
+    </header>
+
+    @if (_current is not null)
+    {
+        <section class="dc-card">
+            <div class="dc-card-head">
+                <h3><Icon Name="check-circle" Size="16" /> Currently in use</h3>
+                <span class="dc-badge dc-badge-success">Active</span>
+            </div>
+            <dl class="dc-data-kv">
+                <dt>Engine</dt><dd>@(_current.Provider == DatabaseProvider.SqlServer ? "SQL Server" : "SQLite")</dd>
+                @if (_current.Provider == DatabaseProvider.Sqlite)
+                {
+                    <dt>Database file</dt><dd><code>@_current.Sqlite?.ResolvePath(Store.BasePath)</code></dd>
+                }
+                else
+                {
+                    <dt>Server</dt><dd><code>@_current.SqlServer?.Server,@_current.SqlServer?.Port</code></dd>
+                    <dt>Database</dt><dd><code>@_current.SqlServer?.Database</code></dd>
+                    <dt>User</dt><dd>@_current.SqlServer?.UserName</dd>
+                }
+            </dl>
+        </section>
+    }
+
+    <section class="dc-card">
+        <h3><Icon Name="edit" Size="16" /> Change database</h3>
+
+        <div class="dc-alert dc-alert-warn"><Icon Name="alert" Size="15" /> <span>Switching does not move any content. Take a backup first, then point DynCMS at the other database; an empty one gets a fresh schema and the starting content chosen below.</span></div>
+
+        <span class="dc-label">Target</span>
+        <div class="dc-setup-options">
+            <button type="button" class="dc-setup-option @(_request.Mode == DatabaseSetupMode.ExistingDatabase ? "dc-active" : "")" @onclick="() => SetMode(DatabaseSetupMode.ExistingDatabase)" disabled="@_busy">
+                <Icon Name="layers" Size="20" />
+                <strong>Use an existing database</strong>
+                <span>Connect to a database that already exists. DynCMS tables are added if they are missing.</span>
+                @if (_request.Mode == DatabaseSetupMode.ExistingDatabase) { <Icon Name="check-circle" Size="16" Class="dc-setup-check" /> }
+            </button>
+            <button type="button" class="dc-setup-option @(_request.Mode == DatabaseSetupMode.NewDatabase ? "dc-active" : "")" @onclick="() => SetMode(DatabaseSetupMode.NewDatabase)" disabled="@_busy">
+                <Icon Name="sparkles" Size="20" />
+                <strong>Create a new database</strong>
+                <span>Start empty. DynCMS creates the database and its schema for you.</span>
+                @if (_request.Mode == DatabaseSetupMode.NewDatabase) { <Icon Name="check-circle" Size="16" Class="dc-setup-check" /> }
+            </button>
+        </div>
+
+        <span class="dc-label">Engine</span>
+        <div class="dc-setup-options">
+            <button type="button" class="dc-setup-option @(_request.Provider == DatabaseProvider.Sqlite ? "dc-active" : "")" @onclick="() => SetProvider(DatabaseProvider.Sqlite)" disabled="@_busy">
+                <Icon Name="file" Size="20" />
+                <strong>SQLite</strong>
+                <span>A single file inside the application folder.</span>
+                @if (_request.Provider == DatabaseProvider.Sqlite) { <Icon Name="check-circle" Size="16" Class="dc-setup-check" /> }
+            </button>
+            <button type="button" class="dc-setup-option @(_request.Provider == DatabaseProvider.SqlServer ? "dc-active" : "")" @onclick="() => SetProvider(DatabaseProvider.SqlServer)" disabled="@_busy">
+                <Icon Name="server" Size="20" />
+                <strong>SQL Server</strong>
+                <span>Microsoft SQL Server or Azure SQL, SQL authentication.</span>
+                @if (_request.Provider == DatabaseProvider.SqlServer) { <Icon Name="check-circle" Size="16" Class="dc-setup-check" /> }
+            </button>
+        </div>
+
+        @if (_request.Provider == DatabaseProvider.Sqlite)
+        {
+            <label class="dc-field">
+                <span class="dc-label">Database file</span>
+                <input class="dc-input" type="text" @bind="_request.SqlitePath" @bind:after="ClearResult" placeholder="App_Data/dyncms.db" disabled="@_busy" />
+                <small class="dc-setup-path">@ResolvedSqlitePath</small>
+                <small class="dc-muted">
+                    @(_request.Mode == DatabaseSetupMode.NewDatabase
+                        ? "Relative paths are inside the application root. The file must not exist yet."
+                        : "Relative paths are inside the application root. Point this at the existing .db file.")
+                </small>
+            </label>
+        }
+        else
+        {
+            <div class="dc-form-grid">
+                <label class="dc-field">
+                    <span class="dc-label">Server</span>
+                    <input class="dc-input" type="text" @bind="_request.Server" @bind:after="ClearResult" placeholder="localhost or server\instance" disabled="@_busy" />
+                </label>
+                <label class="dc-field">
+                    <span class="dc-label">Port</span>
+                    <input class="dc-input" type="number" min="1" max="65535" @bind="_request.Port" @bind:after="ClearResult" disabled="@_busy" />
+                </label>
+                <div class="dc-field">
+                    <label class="dc-label" for="dc-data-database">Database name</label>
+                    <input id="dc-data-database" class="dc-input" type="text" @bind="_request.Database" @bind:after="ClearResult" placeholder="DynCMS" disabled="@_busy" />
+                    @if (_request.Mode == DatabaseSetupMode.NewDatabase)
+                    {
+                        <label class="dc-check">
+                            <input type="checkbox" @bind="_request.CreateDatabase" @bind:after="ClearResult" disabled="@_busy" />
+                            <span>Create the database if it does not exist (uses the master database)</span>
+                        </label>
+                    }
+                </div>
+                <div class="dc-field">
+                    <span class="dc-label">Trust server certificate</span>
+                    <label class="dc-toggle dc-setup-toggle">
+                        <input type="checkbox" @bind="_request.TrustServerCertificate" @bind:after="ClearResult" disabled="@_busy" />
+                        <span class="dc-toggle-track"><span class="dc-toggle-thumb"></span></span>
+                        <span>@(_request.TrustServerCertificate ? "Accept self-signed certificates" : "Require a trusted certificate")</span>
+                    </label>
+                </div>
+                <label class="dc-field">
+                    <span class="dc-label">User</span>
+                    <input class="dc-input" type="text" @bind="_request.UserName" @bind:after="ClearResult" autocomplete="off" placeholder="sa" disabled="@_busy" />
+                </label>
+                <label class="dc-field">
+                    <span class="dc-label">Password</span>
+                    <input class="dc-input" type="password" @bind="_request.Password" @bind:after="ClearResult" autocomplete="new-password" disabled="@_busy" />
+                </label>
+            </div>
+        }
+
+        <span class="dc-label">Starting content (when the database is empty)</span>
+        <div class="dc-setup-options">
+            <button type="button" class="dc-setup-option @(_request.StarterContent == StarterContent.EmptySite ? "dc-active" : "")" @onclick="() => SetStarterContent(StarterContent.EmptySite)" disabled="@_busy">
+                <Icon Name="file" Size="20" />
+                <strong>Empty website</strong>
+                <span>Only the home page.</span>
+                @if (_request.StarterContent == StarterContent.EmptySite) { <Icon Name="check-circle" Size="16" Class="dc-setup-check" /> }
+            </button>
+            <button type="button" class="dc-setup-option @(_request.StarterContent == StarterContent.DemoBlog ? "dc-active" : "")" @onclick="() => SetStarterContent(StarterContent.DemoBlog)" disabled="@_busy">
+                <Icon Name="newspaper" Size="20" />
+                <strong>Demo blog</strong>
+                <span>A paged blog with categories, tags, images and a draft.</span>
+                @if (_request.StarterContent == StarterContent.DemoBlog) { <Icon Name="check-circle" Size="16" Class="dc-setup-check" /> }
+            </button>
+        </div>
+
+        @if (_result is not null)
+        {
+            <div class="dc-setup-result @(_result.Success ? "dc-setup-result-ok" : "dc-setup-result-error")" role="status">
+                <strong><Icon Name="@(_result.Success ? "check-circle" : "alert")" Size="16" /> @_result.Message</strong>
+                @if (_result.Details.Count > 0)
+                {
+                    <ul>
+                        @foreach (var line in _result.Details) { <li>@line</li> }
+                    </ul>
+                }
+            </div>
+        }
+
+        <div class="dc-data-actions">
+            <button type="button" class="dc-btn" @onclick="TestAsync" disabled="@_busy">
+                @if (_busy && _action == "test") { <span class="dc-spinner"></span> } else { <Icon Name="zap" Size="15" /> }
+                <span>Test connection</span>
+            </button>
+            <button type="button" class="dc-btn dc-btn-primary" @onclick="() => _confirm = true" disabled="@(_busy || IsUnchanged)">
+                @if (_busy && _action == "switch") { <span class="dc-spinner"></span><span>Switching…</span> } else { <Icon Name="save" Size="15" /><span>Save and switch</span> }
+            </button>
+            <button type="button" class="dc-btn dc-btn-ghost" @onclick="ResetForm" disabled="@_busy"><Icon Name="rotate-ccw" Size="14" /> Reset form</button>
+        </div>
+    </section>
+</div>
+
+@if (_confirm)
+{
+    <ConfirmDialog Title="Switch database?"
+                   Message="@ConfirmMessage"
+                   ConfirmText="Save and switch"
+                   Danger="true"
+                   OnConfirm="SwitchAsync"
+                   OnCancel="() => _confirm = false" />
+}
+
+@code {
+    private DatabaseConfiguration? _current;
+    private DatabaseSetupRequest _request = new();
+    private DatabaseTestResult? _result;
+    private bool _busy;
+    private bool _confirm;
+    private string? _action;
+
+    private string ConfirmMessage => _request.Provider == DatabaseProvider.Sqlite
+        ? $"DynCMS will start using the SQLite file {ResolvedSqlitePath}. Everyone is signed out and has to sign in again with an account that exists in that database."
+        : $"DynCMS will start using database '{_request.Database}' on {_request.Server}. Everyone is signed out and has to sign in again with an account that exists in that database.";
+
+    private string ResolvedSqlitePath
+    {
+        get
+        {
+            try { return Path.GetFullPath(Path.Combine(Paths.BasePath, _request.SqlitePath.Trim())); }
+            catch { return string.Empty; }
+        }
+    }
+
+    /// <summary>True while the form still describes the active configuration, so there is nothing to switch to.</summary>
+    private bool IsUnchanged
+    {
+        get
+        {
+            if (_current is null) return false;
+            if (_request.Provider != _current.Provider) return false;
+            return _current.Provider == DatabaseProvider.Sqlite
+                ? string.Equals(ResolvedSqlitePath, _current.Sqlite?.ResolvePath(Store.BasePath), StringComparison.OrdinalIgnoreCase)
+                : _current.SqlServer is { } s &&
+                  string.Equals(_request.Server.Trim(), s.Server, StringComparison.OrdinalIgnoreCase) &&
+                  _request.Port == s.Port &&
+                  string.Equals(_request.Database.Trim(), s.Database, StringComparison.OrdinalIgnoreCase) &&
+                  string.Equals(_request.UserName.Trim(), s.UserName, StringComparison.Ordinal) &&
+                  _request.Password == s.Password &&
+                  _request.TrustServerCertificate == s.TrustServerCertificate;
+        }
+    }
+
+    protected override void OnInitialized() => ResetForm();
+
+    private void ResetForm()
+    {
+        _current = Store.Current;
+        _request = new DatabaseSetupRequest { Mode = DatabaseSetupMode.ExistingDatabase };
+        if (_current is null) return;
+
+        _request.Provider = _current.Provider;
+        if (_current.Sqlite is { } sqlite) _request.SqlitePath = sqlite.DatabasePath;
+        if (_current.SqlServer is { } sql)
+        {
+            _request.Server = sql.Server;
+            _request.Port = sql.Port;
+            _request.Database = sql.Database;
+            _request.UserName = sql.UserName;
+            _request.Password = sql.Password;
+            _request.TrustServerCertificate = sql.TrustServerCertificate;
+        }
+        ClearResult();
+    }
+
+    private void SetMode(DatabaseSetupMode mode) { _request.Mode = mode; ClearResult(); }
+    private void SetProvider(DatabaseProvider provider) { _request.Provider = provider; ClearResult(); }
+    private void SetStarterContent(StarterContent starter) { _request.StarterContent = starter; ClearResult(); }
+    private void ClearResult() => _result = null;
+
+    private async Task TestAsync()
+    {
+        if (_busy) return;
+        _busy = true;
+        _action = "test";
+        try
+        {
+            _result = await Setup.TestConnectionAsync(_request);
+        }
+        finally
+        {
+            _busy = false;
+            _action = null;
+        }
+    }
+
+    private async Task SwitchAsync()
+    {
+        _confirm = false;
+        if (_busy) return;
+        _busy = true;
+        _action = "switch";
+        try
+        {
+            _result = await Maintenance.SwitchConfigurationAsync(_request);
+            if (_result.Success)
+            {
+                Toasts.Success("Database switched", "Sign in again to continue.");
+                Nav.NavigateTo(DynCmsUi.LoginPath, forceLoad: true);
+            }
+        }
+        catch (Exception ex)
+        {
+            _result = DatabaseTestResult.Fail("Switching the database failed.", ex.Message);
+        }
+        finally
+        {
+            _busy = false;
+            _action = null;
+        }
+    }
+}

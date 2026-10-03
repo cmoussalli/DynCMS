@@ -1,0 +1,6 @@
+@namespace DynCMS.UI.Admin.PropertyEditors
+@inherits PropertyEditorBase
+
+<input id="@InputId" class="@InputClass" type="text" value="@Value"
+       placeholder="@Config("placeholder")" maxlength="@ConfigInt("maxLength")"
+       @oninput="e => SetValueAsync(e.Value?.ToString())" />

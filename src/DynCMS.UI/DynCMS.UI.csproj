@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>DynCMS.UI</RootNamespace>
+    <AddRazorSupportForMvc>false</AddRazorSupportForMvc>
+    <StaticWebAssetBasePath>_content/DynCMS.UI</StaticWebAssetBasePath>
+    <Description>DynCMS Blazor components: admin back office, property editors and content rendering.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <SupportedPlatform Include="browser" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <!-- Login/cookie service and the identity management screens (users, roles, permissions, tokens). -->
+    <PackageReference Include="CMouss.IdentityFramework.BlazorUI" Version="1.5.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DynCMS.Core\DynCMS.Core.csproj" />
+  </ItemGroup>
+
+</Project>

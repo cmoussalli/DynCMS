@@ -1,0 +1,48 @@
+@namespace DynCMS.UI.Admin.Components
+
+<li class="dc-tree-item">
+    <div class="dc-tree-row @(Tree.CurrentSelection == Node.Id ? "dc-selected" : null)" style="padding-left:@(Depth * 16 + 6)px">
+        <button type="button" class="dc-tree-toggle @(HasChildren ? null : "dc-invisible")" @onclick="() => Tree.Toggle(Node.Id)" tabindex="-1">
+            <Icon Name="@(Expanded ? "chevron-down" : "chevron-right")" Size="14" />
+        </button>
+        <a class="dc-tree-link" href="/admin/content/@Node.Id" title="@Node.ContentType.Name">
+            <Icon Name="@Node.ContentType.Icon" Size="15" />
+            <span class="dc-tree-name">@Node.Name</span>
+            @if (Node.VariesByCulture)
+            {
+                <span class="dc-tree-langs" title="@LanguageTitle">@Node.Cultures.Count(c => c.Value.Exists)<Icon Name="globe" Size="11" /></span>
+            }
+            @if (!Node.IsPublished)
+            {
+                <span class="dc-dot dc-dot-muted" title="Not published"></span>
+            }
+            else if (Node.HasPendingChanges)
+            {
+                <span class="dc-dot dc-dot-warn" title="Unpublished changes"></span>
+            }
+        </a>
+        <button type="button" class="dc-tree-add" title="Create under @Node.Name" @onclick="() => Tree.RequestCreateAsync(Node.Id)">
+            <Icon Name="plus" Size="14" />
+        </button>
+    </div>
+    @if (Expanded && HasChildren)
+    {
+        <ul class="dc-tree-list">
+            @foreach (var child in Tree.ChildrenOf(Node.Id))
+            {
+                <ContentTreeNode Node="child" Tree="Tree" Depth="Depth + 1" @key="child.Id" />
+            }
+        </ul>
+    }
+</li>
+
+@code {
+    [Parameter, EditorRequired] public ContentNode Node { get; set; } = default!;
+    [Parameter, EditorRequired] public ContentTree Tree { get; set; } = default!;
+    [Parameter] public int Depth { get; set; }
+
+    private string LanguageTitle => string.Join(", ", Node.Cultures.Where(c => c.Value.Exists).Select(c => $"{c.Key}: {(c.Value.IsPublished ? (c.Value.HasPendingChanges ? "pending" : "published") : "draft")}"));
+
+    private bool Expanded => Tree.IsExpanded(Node.Id);
+    private bool HasChildren => Tree.HasChildren(Node.Id);
+}

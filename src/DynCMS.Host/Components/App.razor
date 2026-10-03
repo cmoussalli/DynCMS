@@ -1,0 +1,74 @@
+@using DynCMS.Core.Data
+@inject DynCmsHostOptions Options
+@inject IHostEnvironment Environment
+@inject IDynCmsRuntime Runtime
+@inject ILanguageService Languages
+
+<!DOCTYPE html>
+<html lang="@_lang">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <ResourcePreloader />
+    <link rel="stylesheet" href="@Assets[DynCmsHost.ShellStylesheet]" />
+    @if (Options.IncludeSiteStylesheet)
+    {
+        <link rel="stylesheet" href="@Assets[DynCmsHost.SiteStylesheet]" />
+    }
+    @* The scoped-CSS bundle is named after the application assembly, so it cannot be a constant here. *@
+    <link rel="stylesheet" href="@Assets[ScopedCssBundle]" />
+    <link rel="stylesheet" href="@DynCmsUi.AdminStylesheet" />
+    @foreach (var stylesheet in Options.Stylesheets)
+    {
+        <link rel="stylesheet" href="@Assets[stylesheet]" />
+    }
+    <ImportMap />
+    <HeadOutlet @rendermode="RenderModeForPage" />
+</head>
+
+<body>
+    <Routes @rendermode="RenderModeForPage" />
+    <ReconnectModal />
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+    @foreach (var script in Options.Scripts)
+    {
+        <script src="@Assets[script]"></script>
+    }
+</body>
+
+</html>
+
+@code {
+    [CascadingParameter] private HttpContext HttpContext { get; set; } = default!;
+
+    private string _lang = "en";
+
+    private string ScopedCssBundle => $"{Environment.ApplicationName}.styles.css";
+
+    // A page marked [ExcludeFromInteractiveRouting] renders with static SSR (useful for pages that need
+    // HttpContext, e.g. to write a cookie); everything else is interactive server. No DynCMS page uses the
+    // attribute today — the login page runs interactively and force-reloads after setting the cookie — but
+    // the switch is kept so a host's own static-SSR page works without replacing this file.
+    private IComponentRenderMode? RenderModeForPage =>
+        HttpContext.AcceptsInteractiveRouting() ? InteractiveServer : null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // The html lang attribute follows the language of the request: the prefix of the path (/de/…) or the
+        // default language. Before the database is set up there are no languages, so the configured value is used.
+        _lang = Options.Language;
+        if (!Runtime.IsReady) return;
+        try
+        {
+            var languages = await Languages.GetAllAsync(HttpContext.RequestAborted);
+            var first = HttpContext.Request.Path.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+            _lang = (languages.Match(first) ?? languages.Default())?.IsoCode ?? Options.Language;
+        }
+        catch (DynCmsNotConfiguredException)
+        {
+            // Setup mode: keep the configured value.
+        }
+    }
+}

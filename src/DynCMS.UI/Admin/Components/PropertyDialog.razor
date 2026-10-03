@@ -1,0 +1,141 @@
+@namespace DynCMS.UI.Admin.Components
+@inject IPropertyEditorRegistry Editors
+
+<Modal Title="@(IsNew ? "Add property" : "Edit property")" OnClose="OnCancel">
+    <ChildContent>
+        <div class="dc-form-grid">
+            <label class="dc-field">
+                <span class="dc-label">Name</span>
+                <input class="dc-input" type="text" value="@Property.Name" @oninput="OnNameInput" placeholder="e.g. Hero title" autofocus />
+            </label>
+            <label class="dc-field">
+                <span class="dc-label">Alias</span>
+                <input class="dc-input dc-mono" type="text" value="@Property.Alias" @oninput="OnAliasInput" placeholder="heroTitle" />
+            </label>
+        </div>
+
+        <label class="dc-field">
+            <span class="dc-label">Description</span>
+            <input class="dc-input" type="text" @bind="Property.Description" placeholder="Help text shown to editors" />
+        </label>
+
+        <div class="dc-form-grid">
+            <label class="dc-field">
+                <span class="dc-label">Group (tab)</span>
+                <select class="dc-input" @bind="Property.GroupName">
+                    @foreach (var g in Groups)
+                    {
+                        <option value="@g">@g</option>
+                    }
+                </select>
+            </label>
+            <label class="dc-field">
+                <span class="dc-label">Property editor</span>
+                <select class="dc-input" value="@Property.EditorAlias" @onchange="OnEditorChanged">
+                    <option value="">— Choose —</option>
+                    @foreach (var e in Editors.All)
+                    {
+                        <option value="@e.Alias" selected="@(e.Alias == Property.EditorAlias)">@e.Name</option>
+                    }
+                </select>
+            </label>
+        </div>
+
+        @if (Definition is not null)
+        {
+            <p class="dc-muted dc-editor-desc"><Icon Name="@Definition.Icon" Size="14" /> @Definition.Description</p>
+        }
+
+        <label class="dc-check">
+            <input type="checkbox" @bind="Property.Mandatory" /> <span>Mandatory (required before publishing)</span>
+        </label>
+
+        @if (TypeVariesByCulture)
+        {
+            <label class="dc-check">
+                <input type="checkbox" @bind="Property.VariesByCulture" /> <span><Icon Name="globe" Size="14" /> Vary by language (a value per language instead of one shared value)</span>
+            </label>
+        }
+
+        @if (Definition is { ConfigFields.Count: > 0 })
+        {
+            <h4 class="dc-mt">Editor settings</h4>
+            @foreach (var f in Definition.ConfigFields)
+            {
+                <label class="dc-field" @key="f.Key">
+                    @if (f.Type == ConfigFieldType.Boolean)
+                    {
+                        <span class="dc-check">
+                            <input type="checkbox" checked="@IsConfigTrue(f.Key)"
+                                   @onchange="e => SetConfigBool(f.Key, e)" />
+                            <span>@f.Label</span>
+                        </span>
+                    }
+                    else
+                    {
+                        <span class="dc-label">@f.Label</span>
+                        @if (f.Type == ConfigFieldType.MultilineText)
+                        {
+                            <textarea class="dc-input" rows="4" value="@Property.GetConfig(f.Key)" @onchange="e => SetConfig(f.Key, e.Value?.ToString())"></textarea>
+                        }
+                        else
+                        {
+                            <input class="dc-input" type="@(f.Type == ConfigFieldType.Number ? "number" : "text")" step="any"
+                                   value="@Property.GetConfig(f.Key)" @onchange="e => SetConfig(f.Key, e.Value?.ToString())" />
+                        }
+                    }
+                    @if (!string.IsNullOrWhiteSpace(f.Description))
+                    {
+                        <small class="dc-muted">@f.Description</small>
+                    }
+                </label>
+            }
+        }
+    </ChildContent>
+    <Footer>
+        <button type="button" class="dc-btn" @onclick="OnCancel">Cancel</button>
+        <button type="button" class="dc-btn dc-btn-primary" disabled="@(string.IsNullOrWhiteSpace(Property.Name) || string.IsNullOrWhiteSpace(Property.EditorAlias))" @onclick="() => OnSave.InvokeAsync(Property)">
+            @(IsNew ? "Add" : "Apply")
+        </button>
+    </Footer>
+</Modal>
+
+@code {
+    [Parameter, EditorRequired] public PropertyType Property { get; set; } = default!;
+    [Parameter] public IReadOnlyList<string> Groups { get; set; } = ["Content"];
+    [Parameter] public bool IsNew { get; set; }
+    /// <summary>Whether the document type varies by culture; only then is the "vary by language" option shown.</summary>
+    [Parameter] public bool TypeVariesByCulture { get; set; }
+    [Parameter] public EventCallback<PropertyType> OnSave { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private bool _aliasEdited;
+
+    private PropertyEditorDefinition? Definition => Editors.Get(Property.EditorAlias);
+
+    protected override void OnInitialized() => _aliasEdited = !IsNew && !string.IsNullOrEmpty(Property.Alias);
+
+    private void OnNameInput(ChangeEventArgs e)
+    {
+        Property.Name = e.Value?.ToString() ?? string.Empty;
+        if (!_aliasEdited) Property.Alias = Slug.ToAlias(Property.Name);
+    }
+
+    private void OnAliasInput(ChangeEventArgs e)
+    {
+        Property.Alias = e.Value?.ToString() ?? string.Empty;
+        _aliasEdited = !string.IsNullOrEmpty(Property.Alias);
+    }
+
+    private void OnEditorChanged(ChangeEventArgs e) => Property.EditorAlias = e.Value?.ToString() ?? string.Empty;
+
+    private bool IsConfigTrue(string key) => Property.GetConfig(key)?.ToLowerInvariant() == "true";
+
+    private void SetConfigBool(string key, ChangeEventArgs e) => SetConfig(key, e.Value is true ? "true" : "false");
+
+    private void SetConfig(string key, string? value)
+    {
+        if (string.IsNullOrEmpty(value)) Property.Config.Remove(key);
+        else Property.Config[key] = value;
+    }
+}

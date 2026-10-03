@@ -1,0 +1,142 @@
+@page "/admin/guestbook"
+@page "/admin/guestbook/{Id:int}"
+@inject GuestbookService Guestbook
+@inject ToastService Toasts
+@inject NavigationManager Nav
+
+@*
+    A back-office page: the /admin/ prefix puts it inside the DynCMS admin layout for signed-in users. It uses the
+    admin's CSS classes (dc-*) and components (Icon) so it looks like the rest of the back office, and injects the
+    plugin's own GuestbookService next to the host's ToastService.
+*@
+
+<PageTitle>Guestbook · DynCMS</PageTitle>
+
+<div class="dc-page">
+    @if (Id is int id)
+    {
+        <header class="dc-page-head dc-page-head-row">
+            <div>
+                <h1><Icon Name="message" Size="22" /> Entry #@id</h1>
+                <p class="dc-muted">One guestbook entry. Route parameters work as in any Blazor page.</p>
+            </div>
+            <a class="dc-btn" href="/admin/guestbook"><Icon Name="arrow-left" Size="14" /> All entries</a>
+        </header>
+        @if (_entry is null)
+        {
+            <div class="dc-alert dc-alert-warn"><Icon Name="alert" Size="15" /> <span>There is no entry with id @id.</span></div>
+        }
+        else
+        {
+            <div class="dc-card">
+                <dl class="dc-dl">
+                    <dt>Name</dt><dd>@_entry.Name</dd>
+                    <dt>Written</dt><dd>@_entry.CreatedAt.ToLocalTime().ToString("f", CultureInfo.CurrentCulture)</dd>
+                    <dt>State</dt><dd>@(_entry.IsApproved ? "Published" : "Awaiting approval")</dd>
+                    <dt>Message</dt><dd style="white-space:pre-wrap">@_entry.Message</dd>
+                </dl>
+            </div>
+        }
+    }
+    else
+    {
+        <header class="dc-page-head dc-page-head-row">
+            <div>
+                <h1><Icon Name="message" Size="22" /> Guestbook</h1>
+                <p class="dc-muted">
+                    Entries visitors left on <a href="/guestbook" target="_blank" rel="noopener">/guestbook</a>.
+                    @(Guestbook.Options.RequireApproval ? "New entries wait here until you approve them." : "New entries are published right away.")
+                    Stored in the plugin's own SQLite database.
+                </p>
+            </div>
+            <button type="button" class="dc-btn" @onclick="LoadAsync" disabled="@_loading"><Icon Name="refresh" Size="14" /> Refresh</button>
+        </header>
+
+        <div class="dc-stats">
+            <div class="dc-stat"><span class="dc-stat-tile"><Icon Name="message" Size="20" /></span><strong>@_entries.Count</strong><span>Entries</span></div>
+            <div class="dc-stat dc-stat-amber"><span class="dc-stat-tile"><Icon Name="clock" Size="20" /></span><strong>@_entries.Count(e => !e.IsApproved)</strong><span>Awaiting approval</span></div>
+            <div class="dc-stat dc-stat-green"><span class="dc-stat-tile"><Icon Name="check-circle" Size="20" /></span><strong>@_entries.Count(e => e.IsApproved)</strong><span>Published</span></div>
+        </div>
+
+        <div class="dc-table-wrap">
+            <table class="dc-table">
+                <thead><tr><th>Name</th><th>Message</th><th>Written</th><th>State</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var e in _entries)
+                    {
+                        <tr @key="e.Id">
+                            <td><a href="/admin/guestbook/@e.Id"><strong>@e.Name</strong></a></td>
+                            <td class="dc-muted">@Excerpt(e.Message)</td>
+                            <td class="dc-muted">@e.CreatedAt.ToLocalTime().ToString("g", CultureInfo.CurrentCulture)</td>
+                            <td>
+                                @if (e.IsApproved)
+                                {
+                                    <span class="dc-badge dc-badge-success">Published</span>
+                                }
+                                else
+                                {
+                                    <span class="dc-badge dc-badge-warn">Pending</span>
+                                }
+                            </td>
+                            <td class="dc-table-actions">
+                                @if (e.IsApproved)
+                                {
+                                    <button type="button" class="dc-btn dc-btn-sm" @onclick="() => ApproveAsync(e, false)"><Icon Name="unpublish" Size="14" /> Hide</button>
+                                }
+                                else
+                                {
+                                    <button type="button" class="dc-btn dc-btn-sm dc-btn-primary" @onclick="() => ApproveAsync(e, true)"><Icon Name="check" Size="14" /> Approve</button>
+                                }
+                                <button type="button" class="dc-btn dc-btn-sm dc-btn-danger-ghost" @onclick="() => DeleteAsync(e)" title="Delete"><Icon Name="trash" Size="14" /></button>
+                            </td>
+                        </tr>
+                    }
+                    @if (_entries.Count == 0 && !_loading)
+                    {
+                        <tr><td colspan="5" class="dc-muted">Nobody has signed the guestbook yet. Open <a href="/guestbook" target="_blank" rel="noopener">/guestbook</a> and leave the first entry.</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public int? Id { get; set; }
+
+    private IReadOnlyList<GuestbookEntry> _entries = [];
+    private GuestbookEntry? _entry;
+    private bool _loading;
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            if (Id is int id) _entry = await Guestbook.GetAsync(id);
+            else _entries = await Guestbook.GetAllAsync();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task ApproveAsync(GuestbookEntry e, bool approved)
+    {
+        await Guestbook.SetApprovedAsync(e.Id, approved);
+        Toasts.Success(approved ? "Entry published" : "Entry hidden", $"{e.Name}: {Excerpt(e.Message)}");
+        await LoadAsync();
+    }
+
+    private async Task DeleteAsync(GuestbookEntry e)
+    {
+        await Guestbook.DeleteAsync(e.Id);
+        Toasts.Info("Entry deleted", e.Name);
+        await LoadAsync();
+    }
+
+    private static string Excerpt(string text) => text.Length <= 80 ? text : text[..77] + "…";
+}

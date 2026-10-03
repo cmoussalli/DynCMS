@@ -1,0 +1,26 @@
+@inject DynCmsHostOptions Options
+
+@*
+    The router scans this assembly (catch-all page, error, not-found) plus DynCMS.UI (/admin, /setup), the
+    application assembly and anything in DynCmsHostOptions.AdditionalAssemblies. The endpoint in
+    UseDynCmsHost() gets the same list; the two must match.
+*@
+<Router AppAssembly="DynCmsHost.Assembly"
+        AdditionalAssemblies="_assemblies"
+        NotFoundPage="typeof(Pages.NotFound)">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="Options.Layout">
+            <NotAuthorized>
+                <RedirectToLogin />
+            </NotAuthorized>
+        </AuthorizeRouteView>
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+</Router>
+
+@code {
+    private IReadOnlyList<System.Reflection.Assembly> _assemblies = [];
+
+    protected override void OnInitialized() =>
+        _assemblies = Options.GetRouterAssemblies(DynCmsHost.Assembly);
+}

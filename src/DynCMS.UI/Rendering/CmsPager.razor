@@ -1,0 +1,77 @@
+@namespace DynCMS.UI.Rendering
+@inject NavigationManager Nav
+
+@*
+    Links to the pages of a paged list: previous, the page numbers (a window around the current one, with the
+    first and last page and an ellipsis for what is skipped) and next. Every link is a plain <a href="?page=n">,
+    so the pager works without interactivity, the pages can be bookmarked and shared, the browser's back button
+    returns to the previous page and search engines can crawl every page. The URLs keep the rest of the query
+    string (?preview=true stays). Styled by .pager in the host's dyncms-site.css.
+
+        <CmsPager Paging="_paging" PreviousText="@T("paging.previous")" NextText="@T("paging.next")" />
+*@
+@if (Paging is { PageCount: > 1 })
+{
+    <nav class="pager" aria-label="@AriaLabel">
+        @if (Paging.PreviousPage is int previous)
+        {
+            <a class="pager-prev" href="@UrlOf(previous)" rel="prev">‹ @PreviousText</a>
+        }
+        else
+        {
+            <span class="pager-prev disabled" aria-disabled="true">‹ @PreviousText</span>
+        }
+        @foreach (var number in Core.Helpers.Paging.PageNumbers(Paging.Page, Paging.PageCount, Window))
+        {
+            if (number is int n)
+            {
+                if (n == Paging.Page)
+                {
+                    <a class="active" href="@UrlOf(n)" aria-current="page">@n</a>
+                }
+                else
+                {
+                    <a href="@UrlOf(n)">@n</a>
+                }
+            }
+            else
+            {
+                <span class="pager-gap" aria-hidden="true">…</span>
+            }
+        }
+        @if (Paging.NextPage is int next)
+        {
+            <a class="pager-next" href="@UrlOf(next)" rel="next">@NextText ›</a>
+        }
+        else
+        {
+            <span class="pager-next disabled" aria-disabled="true">@NextText ›</span>
+        }
+    </nav>
+}
+
+@code {
+    /// <summary>The page being shown, from <c>Paging.Page(items, pageSize, page)</c>.</summary>
+    [Parameter, EditorRequired] public IPagedList? Paging { get; set; }
+
+    /// <summary>
+    /// Builds the URL of a page number. By default the current address with <c>?page=n</c> replaced (and dropped
+    /// for page 1), keeping the rest of the query string.
+    /// </summary>
+    [Parameter] public Func<int, string>? UrlFor { get; set; }
+
+    /// <summary>Text of the previous link.</summary>
+    [Parameter] public string PreviousText { get; set; } = "Previous";
+
+    /// <summary>Text of the next link.</summary>
+    [Parameter] public string NextText { get; set; } = "Next";
+
+    /// <summary>Accessible name of the navigation landmark.</summary>
+    [Parameter] public string AriaLabel { get; set; } = "Pagination";
+
+    /// <summary>How many page numbers to show either side of the current page.</summary>
+    [Parameter] public int Window { get; set; } = 2;
+
+    private string UrlOf(int page) =>
+        UrlFor?.Invoke(page) ?? Core.Helpers.Paging.PageUrl(Nav.ToAbsoluteUri(Nav.Uri), page);
+}

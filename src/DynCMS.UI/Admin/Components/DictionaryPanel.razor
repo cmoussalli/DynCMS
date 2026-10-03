@@ -1,0 +1,209 @@
+@namespace DynCMS.UI.Admin.Components
+@inject IDictionaryService Dictionary
+@inject ILanguageService Languages
+@inject ToastService Toasts
+@inject NavigationManager Nav
+
+<div class="dc-page">
+    <header class="dc-page-head dc-page-head-row">
+        <div>
+            <h1><Icon Name="book" Size="22" /> Dictionary</h1>
+            <p class="dc-muted">
+                Translated texts that templates print by key — button labels, headings, messages — in the language of the page.
+                Print one with <code>{{ 'blog.readMore' | dictionary }}</code> in a Liquid template or <code>@("T(\"blog.readMore\")")</code>
+                in a Blazor template. A language without a text shows its fallback language's, then the default language's.
+            </p>
+        </div>
+        <div class="dc-inline">
+            <a class="dc-btn dc-btn-primary" href="/admin/settings/dictionary/new"><Icon Name="plus" Size="14" /> New item</a>
+        </div>
+    </header>
+
+    @if (_items.Count > 0)
+    {
+        <div class="dc-search">
+            <Icon Name="search" Size="14" />
+            <input class="dc-input" type="search" placeholder="Filter by key or text…" @bind="_filter" @bind:event="oninput" aria-label="Filter dictionary" />
+            <span class="dc-muted dc-dict-summary">
+                @_items.Count item(s)
+                @foreach (var l in _languages)
+                {
+                    // Items without any text are folders that only organise the dictionary; they do not count as untranslated.
+                    var texts = _items.Where(i => i.Translations.Count > 0).ToList();
+                    var done = texts.Count(i => i.HasTranslation(l.IsoCode));
+                    <span class="dc-badge @(done == texts.Count ? "dc-badge-success" : done == 0 ? "dc-badge-muted" : "dc-badge-warn")" title="@($"{done} of {texts.Count} translated in {l.Name}")">@l.IsoCode @done/@texts.Count</span>
+                }
+            </span>
+        </div>
+    }
+
+    <div class="dc-table-wrap">
+        <table class="dc-table dc-dict-table">
+            <thead>
+                <tr>
+                    <th>Key</th>
+                    @foreach (var l in _languages)
+                    {
+                        <th>
+                            @l.Name <code>@l.IsoCode</code>
+                            @if (l.IsDefault)
+                            {
+                                <small class="dc-muted">default</small>
+                            }
+                            else if (l.FallbackIsoCode is not null)
+                            {
+                                <small class="dc-muted" title="Falls back to @l.FallbackIsoCode when empty">→ @l.FallbackIsoCode</small>
+                            }
+                        </th>
+                    }
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in Visible)
+                {
+                    <tr @key="item.Id">
+                        <td>
+                            <a class="dc-dict-key" style="padding-left:@(item.Level * 18)px" href="/admin/settings/dictionary/@item.Id">
+                                <Icon Name="@(HasChildren(item) ? "folder" : "hash")" Size="14" />
+                                <code>@item.Key</code>
+                            </a>
+                        </td>
+                        @foreach (var l in _languages)
+                        {
+                            var own = item.Get(l.IsoCode);
+                            var shown = own ?? item.Resolve(l.IsoCode, _languages);
+                            <td class="dc-dict-cell">
+                                @if (own is not null)
+                                {
+                                    <span title="@own">@Short(own)</span>
+                                }
+                                else if (item.Translations.Count == 0)
+                                {
+                                    <span class="dc-muted" title="No text in any language: this item only files other items">—</span>
+                                }
+                                else if (shown is not null)
+                                {
+                                    <span class="dc-muted" title="Not translated in @l.Name — falls back to: @shown"><em>@Short(shown)</em></span>
+                                }
+                                else
+                                {
+                                    <span class="dc-badge dc-badge-warn">Missing</span>
+                                }
+                            </td>
+                        }
+                        <td class="dc-table-actions">
+                            <a class="dc-btn dc-btn-sm" href="/admin/settings/dictionary/@item.Id" title="Edit"><Icon Name="edit" Size="14" /></a>
+                            <a class="dc-btn dc-btn-sm" href="/admin/settings/dictionary/new?parent=@item.Id" title="Add an item under this one"><Icon Name="plus" Size="14" /></a>
+                            <button type="button" class="dc-btn dc-btn-sm dc-btn-danger-ghost" title="Delete" @onclick="() => _confirmDelete = item"><Icon Name="trash" Size="14" /></button>
+                        </td>
+                    </tr>
+                }
+                @if (_items.Count == 0)
+                {
+                    <tr>
+                        <td colspan="@(_languages.Count + 2)" class="dc-muted">
+                            No dictionary items yet. <a href="/admin/settings/dictionary/new">Create one</a> — for example <code>blog.readMore</code> with a text per language —
+                            and print it from a template with <code>{{ 'blog.readMore' | dictionary }}</code>.
+                        </td>
+                    </tr>
+                }
+                else if (!Visible.Any())
+                {
+                    <tr><td colspan="@(_languages.Count + 2)" class="dc-muted">Nothing matches "@_filter".</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@if (_confirmDelete is { } doomed)
+{
+    <ConfirmDialog Title="Delete dictionary item"
+                   Message="@DeleteMessage(doomed)"
+                   ConfirmText="Delete" Danger="true"
+                   OnConfirm="() => DeleteAsync(doomed)" OnCancel="() => _confirmDelete = null" />
+}
+
+@code {
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private IReadOnlyList<DictionaryItem> _items = [];
+    private IReadOnlyList<Language> _languages = [];
+    private string _filter = string.Empty;
+    private DictionaryItem? _confirmDelete;
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        _languages = await Languages.GetAllAsync();
+        _items = await Dictionary.GetAllAsync();
+    }
+
+    /// <summary>The items that match the filter, plus their ancestors so the tree keeps its shape.</summary>
+    private IEnumerable<DictionaryItem> Visible
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(_filter)) return _items;
+            var needle = _filter.Trim();
+            var hits = _items.Where(i =>
+                    i.Key.Contains(needle, StringComparison.OrdinalIgnoreCase) ||
+                    i.Translations.Values.Any(v => v?.Contains(needle, StringComparison.OrdinalIgnoreCase) == true))
+                .Select(i => i.Id)
+                .ToHashSet();
+            var byId = _items.ToDictionary(i => i.Id);
+            foreach (var id in hits.ToList())
+            {
+                var current = byId.GetValueOrDefault(id);
+                while (current?.ParentId is { } p && byId.TryGetValue(p, out var parent) && hits.Add(parent.Id)) current = parent;
+            }
+            return _items.Where(i => hits.Contains(i.Id));
+        }
+    }
+
+    private bool HasChildren(DictionaryItem item) => _items.Any(i => i.ParentId == item.Id);
+
+    private List<DictionaryItem> Descendants(DictionaryItem item)
+    {
+        var result = new List<DictionaryItem>();
+        var queue = new Queue<Guid>([item.Id]);
+        while (queue.Count > 0)
+        {
+            var id = queue.Dequeue();
+            foreach (var child in _items.Where(i => i.ParentId == id))
+            {
+                result.Add(child);
+                queue.Enqueue(child.Id);
+            }
+        }
+        return result;
+    }
+
+    private string DeleteMessage(DictionaryItem item)
+    {
+        var below = Descendants(item).Count;
+        var what = below > 0 ? $"'{item.Key}' and the {below} item(s) filed under it" : $"'{item.Key}'";
+        var keys = below > 0 ? "these keys" : "this key";
+        return $"Delete {what}? Templates that print {keys} will show the key itself. This cannot be undone.";
+    }
+
+    private static string Short(string text) => text.Length > 90 ? text[..87].TrimEnd() + "…" : text;
+
+    private async Task DeleteAsync(DictionaryItem item)
+    {
+        _confirmDelete = null;
+        try
+        {
+            await Dictionary.DeleteAsync(item.Id);
+            Toasts.Info("Dictionary item deleted", item.Key);
+            await OnChanged.InvokeAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            Toasts.Error(ex, "Dictionary");
+        }
+        await ReloadAsync();
+    }
+}

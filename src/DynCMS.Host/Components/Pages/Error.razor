@@ -1,0 +1,30 @@
+@page "/Error"
+@using System.Diagnostics
+
+<PageTitle>Error</PageTitle>
+
+<section class="site-container site-error">
+    <h1>Something went wrong</h1>
+    <p>An error occurred while processing your request.</p>
+
+    @if (ShowRequestId)
+    {
+        <p><strong>Request ID:</strong> <code>@RequestId</code></p>
+    }
+
+    <p class="muted">
+        Run the application with <code>ASPNETCORE_ENVIRONMENT=Development</code> to see the exception details.
+        Do not do that on a deployed site: it exposes sensitive information.
+    </p>
+    <a class="btn" href="/">Go to the home page</a>
+</section>
+
+@code {
+    [CascadingParameter] private HttpContext? HttpContext { get; set; }
+
+    private string? RequestId { get; set; }
+    private bool ShowRequestId => !string.IsNullOrEmpty(RequestId);
+
+    protected override void OnInitialized() =>
+        RequestId = Activity.Current?.Id ?? HttpContext?.TraceIdentifier;
+}

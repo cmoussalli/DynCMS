@@ -1,0 +1,125 @@
+@namespace DynCMS.UI.Admin.Components
+@inject ITemplateService TemplateService
+@inject ITemplateRegistry Registry
+@inject ToastService Toasts
+@inject NavigationManager Nav
+
+@if (_definition is null)
+{
+    <div class="dc-workspace-empty">
+        <span class="dc-empty-tile"><Icon Name="alert" Size="32" /></span>
+        <h2>Template not found</h2>
+        <p>No component template is registered with the alias <code>@Alias</code>.</p>
+        <a class="dc-btn" href="/admin/settings/templates">Back to templates</a>
+    </div>
+}
+else
+{
+    <div class="dc-editor">
+        <header class="dc-editor-head">
+            <div class="dc-editor-title">
+                <span class="dc-editor-type"><Icon Name="code" Size="14" /> Component template</span>
+                <h1 class="dc-editor-name-static">@_definition.Name</h1>
+            </div>
+            <div class="dc-editor-status">
+                <span class="dc-badge dc-badge-muted">From code</span>
+                @if (_usage.ContentCount > 0)
+                {
+                    <span class="dc-badge dc-badge-info">@_usage.ContentCount content item(s)</span>
+                }
+            </div>
+        </header>
+
+        <div class="dc-editor-body">
+            <div class="dc-info-grid">
+                <div class="dc-info-card">
+                    <h4>Take it over in the back office</h4>
+                    <p class="dc-muted">
+                        This template is a Blazor component compiled into the application, so its markup lives in the
+                        source code, not in the database. Creating an editable version writes a Liquid template with the
+                        same alias — <code>@_definition.Alias</code> — scaffolded from the document type that uses it.
+                        Content then renders that instead, and you can edit it here whenever you like. Delete it again
+                        and the component takes over as before.
+                    </p>
+                    <div class="dc-inline">
+                        <button type="button" class="dc-btn dc-btn-primary" disabled="@_busy" @onclick="CreateOverrideAsync">
+                            <Icon Name="edit" Size="14" /> Create an editable version
+                        </button>
+                        <a class="dc-btn" href="/admin/settings/templates/new"><Icon Name="plus" Size="14" /> New template instead</a>
+                    </div>
+                </div>
+
+                <div class="dc-info-card">
+                    <h4>Details</h4>
+                    <dl>
+                        <dt>Alias</dt><dd><code>@_definition.Alias</code></dd>
+                        <dt>Component</dt><dd><code>@(_definition.ComponentType?.FullName ?? "—")</code></dd>
+                        <dt>Assembly</dt><dd><code>@(_definition.ComponentType?.Assembly.GetName().Name ?? "—")</code></dd>
+                        <dt>Registered</dt><dd>In <code>Program.cs</code> with <code>AddTemplate&lt;T&gt;("@_definition.Alias")</code></dd>
+                        <dt>Content items</dt><dd>@_usage.ContentCount</dd>
+                    </dl>
+                </div>
+
+                <div class="dc-info-card">
+                    <h4>Allowed on document types</h4>
+                    @if (_usage.DocumentTypes.Count == 0)
+                    {
+                        <p class="dc-muted">No document type allows this template yet.</p>
+                    }
+                    <ul class="dc-plain-list">
+                        @foreach (var t in _usage.DocumentTypes)
+                        {
+                            <li>
+                                <a href="/admin/settings/document-types/@t.Id"><Icon Name="@t.Icon" Size="14" /> @t.Name</a>
+                                @if (string.Equals(t.DefaultTemplateAlias, _definition.Alias, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    <span class="dc-badge dc-badge-muted">default</span>
+                                }
+                            </li>
+                        }
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Alias { get; set; } = string.Empty;
+    [Parameter] public EventCallback OnSaved { get; set; }
+
+    private TemplateDefinition? _definition;
+    private TemplateUsage _usage = TemplateUsage.Empty;
+    private bool _busy;
+    private string? _loadedAlias;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedAlias == Alias) return;
+        _loadedAlias = Alias;
+        _definition = Registry.GetComponent(Alias);
+        _usage = _definition is null ? TemplateUsage.Empty : await TemplateService.GetUsageAsync(Alias);
+    }
+
+    private async Task CreateOverrideAsync()
+    {
+        if (_definition is null || _busy) return;
+        _busy = true;
+        try
+        {
+            var created = await TemplateService.CreateOverrideForComponentAsync(_definition.Alias);
+            Toasts.Success("Editable template created",
+                $"\"{created.Name}\" now renders content using the alias \"{created.Alias}\". Edit it here.");
+            await OnSaved.InvokeAsync();
+            Nav.NavigateTo($"/admin/settings/templates/{created.Id}");
+        }
+        catch (InvalidOperationException ex)
+        {
+            Toasts.Error("Could not create the template", ex.Message);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

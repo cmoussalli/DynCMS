@@ -1,0 +1,159 @@
+@namespace DynCMS.UI.Rendering
+@inject IPublishedContentQuery Query
+@inject ITemplateRegistry Templates
+@inject NavigationManager Nav
+@inject IAnalyticsPageTracker Analytics
+@inject PersistentComponentState PersistentState
+@using DynCMS.Core.Analytics
+@implements IDisposable
+
+@if (_content is null)
+{
+    if (!_loading)
+    {
+        if (NotFound is not null)
+        {
+            @NotFound
+        }
+        else
+        {
+            <div class="dc-notfound">
+                <h1>Page not found</h1>
+                <p>There is no published content at <code>@(Path ?? "/")</code>.</p>
+            </div>
+        }
+    }
+}
+else
+{
+    <PageTitle>@_content.Name</PageTitle>
+    @if (_content.IsPreview)
+    {
+        <div class="dc-preview-bar">
+            <strong>Preview</strong> You are viewing draft content.
+            <a href="@_content.Url">Exit preview</a>
+            <a href="/admin/content/@_content.Id">Edit</a>
+        </div>
+    }
+    <CascadingValue Value="_content" IsFixed="false">
+        @if (_template is { IsStored: true })
+        {
+            <CmsLiquidTemplate Alias="@_template.Alias" Content="_content" />
+        }
+        else if (_template is { ComponentType: not null })
+        {
+            <DynamicComponent Type="_template.ComponentType" Parameters="_parameters" />
+        }
+        else
+        {
+            <CmsDefaultTemplate Content="_content" />
+        }
+    </CascadingValue>
+}
+
+@code {
+    /// <summary>Request path to resolve, for example "/blog/my-post". Null or empty resolves the root.</summary>
+    [Parameter] public string? Path { get; set; }
+
+    /// <summary>Render draft content instead of the published snapshot. Only honoured for signed-in back-office users.</summary>
+    [Parameter] public bool Preview { get; set; }
+
+    /// <summary>Custom markup when nothing is found at the path.</summary>
+    [Parameter] public RenderFragment? NotFound { get; set; }
+
+    /// <summary>When true (default) the router's not-found page is triggered for unknown paths.</summary>
+    [Parameter] public bool UseNotFoundPage { get; set; } = true;
+
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private PublishedContent? _content;
+    private TemplateDefinition? _template;
+    private Dictionary<string, object?> _parameters = [];
+    private bool _loading = true;
+    private string? _resolvedKey;
+
+    // Analytics: the prerender records the first page view and leaves a marker in the persisted component state, so
+    // the interactive render of the same page does not count it twice. Later navigations in the circuit are recorded
+    // by the interactive render itself.
+    private const string TrackedStateKey = "dyncms.analytics.tracked";
+    private PersistingComponentStateSubscription _persisting;
+    private string? _trackedPath;
+
+    protected override void OnInitialized()
+    {
+        _persisting = PersistentState.RegisterOnPersisting(() =>
+        {
+            if (_trackedPath is not null) PersistentState.PersistAsJson(TrackedStateKey, _trackedPath);
+            return Task.CompletedTask;
+        });
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var backOffice = await IsBackOfficeUserAsync();
+        var preview = Preview && backOffice;
+        var key = $"{preview}|{Path}";
+        if (key == _resolvedKey) return;
+        _resolvedKey = key;
+
+        _loading = true;
+        _content = await Query.GetByRouteAsync(Path ?? "/", preview);
+        _template = Templates.Get(_content?.TemplateAlias);
+        _parameters = _content is null ? [] : new Dictionary<string, object?> { ["Content"] = _content };
+        _loading = false;
+
+        TrackView(preview, backOffice);
+
+        if (_content is null && UseNotFoundPage && NotFound is null)
+        {
+            Nav.NotFound();
+        }
+    }
+
+    private void TrackView(bool preview, bool backOffice)
+    {
+        var path = string.IsNullOrEmpty(Path) ? "/" : "/" + Path.TrimStart('/');
+        try
+        {
+            if (preview)
+            {
+                Analytics.NotePath(path);
+                return;
+            }
+
+            if (_content is null)
+            {
+                // Requests for files (/favicon.ico, /robots.txt…) that fell through to the catch-all page are not page views.
+                if (System.IO.Path.HasExtension(path)) return;
+                // A not-found response is re-executed by the status code middleware, which discards the prerendered output
+                // (and with it the marker below), so 404s are counted from the interactive render only.
+                if (!RendererInfo.IsInteractive) return;
+            }
+
+            if (_trackedPath is null && PersistentState.TryTakeFromJson<string>(TrackedStateKey, out var prerendered) && prerendered == path)
+            {
+                _trackedPath = path;
+                Analytics.NotePath(path);
+                return;
+            }
+
+            _trackedPath = path;
+            string? query = null;
+            if (Uri.TryCreate(Nav.Uri, UriKind.Absolute, out var uri) && uri.Query.Length > 1) query = uri.Query[1..];
+            Analytics.Track(new PageTrackingRequest(path, query, _content?.Name, _content?.Id, _content?.Culture, _content is null, backOffice));
+        }
+        catch
+        {
+            // Analytics must never break a page.
+        }
+    }
+
+    public void Dispose() => _persisting.Dispose();
+
+    private async Task<bool> IsBackOfficeUserAsync()
+    {
+        if (AuthState is null) return false;
+        var state = await AuthState;
+        return state.User.Identity?.IsAuthenticated == true;
+    }
+}

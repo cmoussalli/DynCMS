@@ -1,0 +1,162 @@
+@namespace DynCMS.UI.Admin.Components.Analytics
+@using DynCMS.Core.Analytics
+@inject IAnalyticsService Analytics
+@implements IDisposable
+
+<div class="dc-an-view">
+    @if (_error is not null)
+    {
+        <div class="dc-alert dc-alert-error"><Icon Name="alert" Size="15" /> <span>@_error</span></div>
+    }
+    else if (_summary is null)
+    {
+        <div class="dc-loading"><span class="dc-spinner"></span> Computing the report…</div>
+    }
+    else
+    {
+        <div class="dc-stats dc-an-stats">
+            <Stat Icon="eye" Label="Page views" Value="@AnalyticsFormat.Number(_summary.PageViews)" Delta="@AnalyticsFormat.Delta(_summary.PageViews, _previous!.PageViews)" Tint="" />
+            <Stat Icon="users" Label="Unique visitors" Value="@AnalyticsFormat.Number(_summary.Visitors)" Delta="@AnalyticsFormat.Delta(_summary.Visitors, _previous.Visitors)" Tint="dc-stat-green" />
+            <Stat Icon="activity" Label="Sessions" Value="@AnalyticsFormat.Number(_summary.Sessions)" Delta="@AnalyticsFormat.Delta(_summary.Sessions, _previous.Sessions)" Tint="dc-stat-violet" />
+            <Stat Icon="layers" Label="Pages / session" Value="@AnalyticsFormat.Number(_summary.PagesPerSession)" Delta="@AnalyticsFormat.Delta(_summary.PagesPerSession, _previous.PagesPerSession)" Tint="dc-stat-amber" />
+            <Stat Icon="mouse-pointer" Label="Bounce rate" Value="@AnalyticsFormat.Percent(_summary.BounceRate)" Delta="@AnalyticsFormat.Delta(_summary.BounceRate, _previous.BounceRate, lowerIsBetter: true)" Tint="dc-stat-rose" />
+            <Stat Icon="clock" Label="Avg. session" Value="@AnalyticsFormat.Duration(_summary.AverageSessionSeconds)" Delta="@AnalyticsFormat.Delta(_summary.AverageSessionSeconds, _previous.AverageSessionSeconds)" Tint="dc-stat-teal" />
+            <a class="dc-stat dc-stat-live" href="/admin/analytics/visitors">
+                <span class="dc-stat-tile"><span class="dc-an-pulse"></span></span>
+                <strong>@AnalyticsFormat.Number(_active)</strong>
+                <span>Right now <small class="dc-muted">· last 5 min</small></span>
+            </a>
+        </div>
+
+        <section class="dc-card dc-an-chart-card">
+            <div class="dc-card-head">
+                <h3><Icon Name="trending-up" Size="16" /> Traffic</h3>
+                <span class="dc-an-legend">
+                    <span><i class="dc-an-swatch-views"></i> Page views</span>
+                    <span><i class="dc-an-swatch-visitors"></i> Visitors</span>
+                    <span class="dc-muted">per @(Range.Hourly ? "hour" : "day")</span>
+                </span>
+            </div>
+            <AnalyticsChart Points="_series" Hourly="Range.Hourly" />
+        </section>
+
+        <div class="dc-an-grid">
+            <section class="dc-card">
+                <div class="dc-card-head">
+                    <h3><Icon Name="document" Size="16" /> Top pages</h3>
+                    <a href="/admin/analytics/pages">All pages <Icon Name="arrow-right" Size="13" /></a>
+                </div>
+                <AnalyticsBarList Items="_pages" Heading="Page" ShowVisitors="true" ShowDetail="true" Total="_summary.PageViews" ShowShare="true" />
+            </section>
+
+            <section class="dc-card">
+                <div class="dc-card-head">
+                    <h3><Icon Name="compass" Size="16" /> Sources</h3>
+                    <a href="/admin/analytics/sources">All sources <Icon Name="arrow-right" Size="13" /></a>
+                </div>
+                <AnalyticsBarList Items="_referrers" Heading="Referrer" ShowVisitors="true" EmptyText="No referrers recorded yet." />
+            </section>
+
+            <section class="dc-card">
+                <div class="dc-card-head">
+                    <h3><Icon Name="map" Size="16" /> Countries</h3>
+                    <a href="/admin/analytics/map">Open map <Icon Name="arrow-right" Size="13" /></a>
+                </div>
+                <AnalyticsBarList Items="_countries" Heading="Country" ShowVisitors="true" EmptyText="No locations yet. Geolocation runs in the background after a visit." EmptyIcon="map-pin" />
+            </section>
+
+            <section class="dc-card">
+                <div class="dc-card-head">
+                    <h3><Icon Name="monitor" Size="16" /> Devices &amp; browsers</h3>
+                    <a href="/admin/analytics/technology">Technology <Icon Name="arrow-right" Size="13" /></a>
+                </div>
+                <AnalyticsBarList Items="_devices" Heading="Device" ShowShare="true" ShowHeader="true" />
+                <div class="dc-an-sub">
+                    <AnalyticsBarList Items="_browsers" Heading="Browser" ShowShare="true" />
+                </div>
+            </section>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public AnalyticsRange Range { get; set; } = AnalyticsRange.LastDays(30);
+
+    private AnalyticsRange? _loaded;
+    private AnalyticsSummary? _summary, _previous;
+    private long _active;
+    private IReadOnlyList<AnalyticsTimePoint> _series = [];
+    private IReadOnlyList<AnalyticsBarItem> _pages = [], _referrers = [], _countries = [], _devices = [], _browsers = [];
+    private string? _error;
+    private Timer? _timer;
+    private CancellationTokenSource? _cts;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loaded == Range) return;
+        _loaded = Range;
+        await LoadAsync();
+    }
+
+    protected override void OnInitialized()
+    {
+        _timer = new Timer(async _ => await RefreshActiveAsync(), null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+    }
+
+    private async Task LoadAsync()
+    {
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+        var ct = _cts.Token;
+        var range = Range;
+        _error = null;
+        try
+        {
+            var offset = (int)TimeZoneInfo.Local.GetUtcOffset(DateTime.UtcNow).TotalMinutes;
+            var summary = await Analytics.GetSummaryAsync(range, ct);
+            var previous = await Analytics.GetSummaryAsync(range.Previous(), ct);
+            var series = await Analytics.GetTimeSeriesAsync(range, offset, ct);
+            var pages = await Analytics.GetPagesAsync(range, 8, null, ct);
+            var referrers = await Analytics.GetReferrersAsync(range, 8, ct);
+            var countries = await Analytics.GetCountriesAsync(range, 8, ct);
+            var devices = await Analytics.GetDevicesAsync(range, ct);
+            var browsers = await Analytics.GetBrowsersAsync(range, 5, ct);
+            var active = await Analytics.GetActiveVisitorsAsync(5, ct);
+            if (ct.IsCancellationRequested) return;
+
+            _summary = summary;
+            _previous = previous;
+            _series = series;
+            _active = active;
+            _pages = pages.Select(p => new AnalyticsBarItem(p.Path, p.PageViews, p.Visitors, p.Title, Href: $"/admin/analytics/visitors?path={Uri.EscapeDataString(p.Path)}", Badge: p.NotFound ? "404" : null, BadgeClass: "dc-badge-warn")).ToList();
+            _referrers = referrers.Select(r => new AnalyticsBarItem(r.Host ?? (r.Channel == ReferrerChannels.Internal ? "Internal navigation" : "Direct / none"), r.PageViews, r.Visitors, Icon: AnalyticsFormat.ChannelIcon(r.Channel), Badge: r.Channel, BadgeClass: AnalyticsFormat.ChannelClass(r.Channel))).ToList();
+            _countries = countries.Select(c => new AnalyticsBarItem(AnalyticsFormat.CountryName(c.Key, c.Label ?? "Unknown"), c.PageViews, c.Visitors, Prefix: AnalyticsFormat.Flag(c.Key), Href: c.Key is null ? null : $"/admin/analytics/visitors?country={c.Key}")).ToList();
+            _devices = devices.Select(d => new AnalyticsBarItem(d.Key ?? "Unknown", d.PageViews, d.Visitors, Icon: AnalyticsFormat.DeviceIcon(d.Key))).ToList();
+            _browsers = browsers.Select(b => new AnalyticsBarItem(b.Key ?? "Unknown", b.PageViews, b.Visitors, Icon: "globe")).ToList();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private async Task RefreshActiveAsync()
+    {
+        try
+        {
+            _active = await Analytics.GetActiveVisitorsAsync(5);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+            // The circuit may be gone or the database switched; the next tick tries again.
+        }
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+        _cts?.Cancel();
+    }
+}

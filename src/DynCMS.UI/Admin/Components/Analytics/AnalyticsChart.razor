@@ -1,0 +1,123 @@
+@namespace DynCMS.UI.Admin.Components.Analytics
+@using System.Globalization
+@using DynCMS.Core.Analytics
+
+@*
+    Page views and visitors over time as an inline SVG area chart: no charting library, so it works offline and
+    renders on the server. Each bucket has an invisible hover column with a native tooltip.
+*@
+<div class="dc-an-chart" style="height:@(Height)px">
+    @if (Points.Count == 0)
+    {
+        <div class="dc-an-chart-empty">No data for this period.</div>
+    }
+    else
+    {
+        <svg viewBox="0 0 @W @H" preserveAspectRatio="none" role="img" aria-label="Page views and visitors over time">
+            @* grid *@
+            @for (var i = 0; i <= GridLines; i++)
+            {
+                var y = Top + (H - Top - Bottom) * i / GridLines;
+                <line x1="@Left" x2="@(W - Right)" y1="@F(y)" y2="@F(y)" class="dc-an-gridline" />
+            }
+            @* areas and lines *@
+            <path d="@AreaPath(p => p.PageViews)" class="dc-an-area-views" />
+            <path d="@LinePath(p => p.PageViews)" class="dc-an-line-views" />
+            <path d="@AreaPath(p => p.Visitors)" class="dc-an-area-visitors" />
+            <path d="@LinePath(p => p.Visitors)" class="dc-an-line-visitors" />
+            @* hover columns *@
+            @for (var i = 0; i < Points.Count; i++)
+            {
+                var p = Points[i];
+                var x = X(i);
+                var half = Points.Count == 1 ? (W - Left - Right) / 2 : (W - Left - Right) / (Points.Count - 1) / 2;
+                <g class="dc-an-hover">
+                    <rect x="@F(x - half)" y="@Top" width="@F(half * 2)" height="@F(H - Top - Bottom)" fill="transparent">
+                        <title>@Label(p.StartUtc) — @p.PageViews.ToString("N0") views, @p.Visitors.ToString("N0") visitors</title>
+                    </rect>
+                    <line x1="@F(x)" x2="@F(x)" y1="@Top" y2="@(H - Bottom)" class="dc-an-cursor" />
+                    <circle cx="@F(x)" cy="@F(Y(p.PageViews))" r="4" class="dc-an-dot-views" />
+                    <circle cx="@F(x)" cy="@F(Y(p.Visitors))" r="4" class="dc-an-dot-visitors" />
+                </g>
+            }
+        </svg>
+        <div class="dc-an-axis-y">
+            @for (var i = 0; i <= GridLines; i++)
+            {
+                var value = _max * (GridLines - i) / GridLines;
+                <span>@AnalyticsFormat.Compact((long)Math.Round(value))</span>
+            }
+        </div>
+        <div class="dc-an-axis-x">
+            @foreach (var (index, text) in XLabels())
+            {
+                <span style="left:@F(100.0 * X(index) / W)%">@text</span>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private const double W = 1000, H = 260, Left = 8, Right = 8, Top = 12, Bottom = 8;
+    private const int GridLines = 4;
+
+    [Parameter] public IReadOnlyList<AnalyticsTimePoint> Points { get; set; } = [];
+    [Parameter] public bool Hourly { get; set; }
+    [Parameter] public int Height { get; set; } = 280;
+
+    private double _max = 1;
+
+    protected override void OnParametersSet()
+    {
+        var max = Points.Count == 0 ? 0 : Points.Max(p => Math.Max(p.PageViews, p.Visitors));
+        _max = NiceCeiling(max);
+    }
+
+    private static double NiceCeiling(long max)
+    {
+        if (max <= 4) return 4;
+        var magnitude = Math.Pow(10, Math.Floor(Math.Log10(max)));
+        var normalized = max / magnitude;
+        var nice = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 4 ? 4 : normalized <= 5 ? 5 : normalized <= 8 ? 8 : 10;
+        return nice * magnitude;
+    }
+
+    private double X(int index) => Points.Count == 1 ? Left + (W - Left - Right) / 2 : Left + (W - Left - Right) * index / (Points.Count - 1);
+    private double Y(long value) => H - Bottom - (H - Top - Bottom) * (value / _max);
+
+    private string LinePath(Func<AnalyticsTimePoint, long> selector)
+    {
+        var sb = new System.Text.StringBuilder();
+        for (var i = 0; i < Points.Count; i++)
+            sb.Append(i == 0 ? "M" : "L").Append(F(X(i))).Append(' ').Append(F(Y(selector(Points[i]))));
+        return sb.ToString();
+    }
+
+    private string AreaPath(Func<AnalyticsTimePoint, long> selector)
+    {
+        if (Points.Count == 0) return string.Empty;
+        return $"{LinePath(selector)}L{F(X(Points.Count - 1))} {F(H - Bottom)}L{F(X(0))} {F(H - Bottom)}Z";
+    }
+
+    private IEnumerable<(int Index, string Text)> XLabels()
+    {
+        if (Points.Count == 0) yield break;
+        var step = Math.Max(1, (int)Math.Ceiling(Points.Count / 8.0));
+        for (var i = 0; i < Points.Count; i += step)
+            yield return (i, ShortLabel(Points[i].StartUtc));
+    }
+
+    private string ShortLabel(DateTime utc)
+    {
+        var local = utc.ToLocalTime();
+        return Hourly ? local.ToString("HH:mm") : local.ToString("d MMM");
+    }
+
+    private string Label(DateTime utc)
+    {
+        var local = utc.ToLocalTime();
+        return Hourly ? local.ToString("d MMM, HH:mm") : local.ToString("ddd d MMM yyyy");
+    }
+
+    private static string F(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
+}

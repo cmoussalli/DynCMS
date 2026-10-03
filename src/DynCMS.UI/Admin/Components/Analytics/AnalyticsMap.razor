@@ -1,0 +1,196 @@
+@namespace DynCMS.UI.Admin.Components.Analytics
+@using DynCMS.Core.Analytics
+@using Microsoft.Extensions.Options
+@inject IAnalyticsService Analytics
+@inject IJSRuntime JS
+@inject IOptions<DynCmsOptions> Options
+@implements IAsyncDisposable
+
+<div class="dc-an-view dc-an-map-view">
+    @if (_error is not null)
+    {
+        <div class="dc-alert dc-alert-error"><Icon Name="alert" Size="15" /> <span>@_error</span></div>
+    }
+
+    <div class="dc-an-map-layout">
+        <section class="dc-card dc-card-flush dc-an-map-card">
+            <div class="dc-an-map-head">
+                <h3><Icon Name="map" Size="16" /> Visitors on the map</h3>
+                <span class="dc-muted">
+                    @if (_points.Count > 0) { <text>@_points.Count place@(_points.Count == 1 ? "" : "s") · @AnalyticsFormat.Number(_points.Sum(p => p.PageViews)) located views</text> }
+                    else if (!_loading) { <text>No located views in this period</text> }
+                </span>
+                <button type="button" class="dc-btn dc-btn-sm" @onclick="FitAsync" disabled="@(_points.Count == 0 || _mapReady != true)" title="Zoom to the visits"><Icon Name="crosshair" Size="13" /> Fit</button>
+            </div>
+            <div class="dc-an-map-frame">
+                <div @ref="_mapElement" class="dc-an-map"></div>
+                @if (_mapReady == false)
+                {
+                    <div class="dc-an-map-overlay">
+                        <Icon Name="map" Size="28" />
+                        <strong>The map could not be loaded</strong>
+                        <span>Leaflet is fetched from cdnjs.cloudflare.com when this page opens. Check the internet connection and reload; the lists on the right work without it.</span>
+                    </div>
+                }
+                else if (_mapReady is null)
+                {
+                    <div class="dc-an-map-overlay dc-an-map-loading"><span class="dc-spinner"></span> Loading map…</div>
+                }
+            </div>
+            <div class="dc-an-map-foot dc-muted">
+                Bubbles are sized by page views per city. Locations come from the IP address (city level at best) and are resolved a moment after each visit
+                @if (_pendingGeo > 0) { <text>· <strong>@AnalyticsFormat.Number(_pendingGeo)</strong> view@(_pendingGeo == 1 ? "" : "s") still being located</text> }
+                @if (!_geoEnabled) { <text>· <span class="dc-badge dc-badge-warn">Geolocation is off</span> <a href="/admin/analytics/settings">Settings</a></text> }
+            </div>
+        </section>
+
+        <aside class="dc-an-map-side">
+            <section class="dc-card">
+                <div class="dc-card-head"><h3><Icon Name="flag" Size="16" /> Countries</h3><span class="dc-muted">@_countries.Count</span></div>
+                <AnalyticsBarList Items="_countryItems" Heading="Country" ShowVisitors="true" EmptyText="No countries yet." EmptyIcon="map-pin" />
+            </section>
+            <section class="dc-card">
+                <div class="dc-card-head"><h3><Icon Name="map-pin" Size="16" /> Cities</h3><span class="dc-muted">top @Math.Min(15, _points.Count)</span></div>
+                @if (_points.Count == 0)
+                {
+                    <div class="dc-an-empty"><Icon Name="map-pin" Size="22" /><span>No cities yet.</span></div>
+                }
+                else
+                {
+                    <ul class="dc-an-cities">
+                        @foreach (var p in _points.Take(15))
+                        {
+                            <li>
+                                <button type="button" class="dc-an-city" @onclick="() => FocusAsync(p)" title="Show on the map">
+                                    <span class="dc-an-flag">@AnalyticsFormat.Flag(p.CountryCode)</span>
+                                    <span class="dc-an-city-text">
+                                        <strong>@(p.City ?? p.Region ?? p.Country ?? "Unknown")</strong>
+                                        <small>@AnalyticsFormat.Place(null, p.Region, p.Country, p.CountryCode)</small>
+                                    </span>
+                                    <span class="dc-num">@AnalyticsFormat.Number(p.PageViews)</span>
+                                </button>
+                            </li>
+                        }
+                    </ul>
+                }
+            </section>
+        </aside>
+    </div>
+</div>
+
+@code {
+    [Parameter] public AnalyticsRange Range { get; set; } = AnalyticsRange.LastDays(30);
+
+    private ElementReference _mapElement;
+    private IJSObjectReference? _module;
+    private bool? _mapReady;
+    private bool _loading, _geoEnabled = true;
+    private AnalyticsRange? _loaded;
+    private IReadOnlyList<AnalyticsGeoPoint> _points = [];
+    private IReadOnlyList<AnalyticsCount> _countries = [];
+    private IReadOnlyList<AnalyticsBarItem> _countryItems = [];
+    private long _pendingGeo;
+    private string? _error;
+    private bool _pointsDirty;
+
+    [Inject] private IAnalyticsSettingsService Settings { get; set; } = default!;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loaded == Range) return;
+        _loaded = Range;
+        await LoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                _module = await JS.InvokeAsync<IJSObjectReference>("import", "./_content/DynCMS.UI/dyncms-analytics-map.js");
+                var analytics = Options.Value.Analytics;
+                _mapReady = await _module.InvokeAsync<bool>("init", _mapElement, analytics.MapTileUrl, analytics.MapTileAttribution);
+            }
+            catch (JSException)
+            {
+                _mapReady = false;
+            }
+            StateHasChanged();
+        }
+
+        if (_mapReady == true && _pointsDirty && _module is not null)
+        {
+            _pointsDirty = false;
+            await PushPointsAsync(fit: true);
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            var range = Range;
+            _geoEnabled = Settings.Current.GeoLookupEnabled;
+            var points = await Analytics.GetGeoPointsAsync(range, 1000);
+            var countries = await Analytics.GetCountriesAsync(range, 100);
+            var info = await Analytics.GetDataInfoAsync();
+            _points = points;
+            _countries = countries;
+            _pendingGeo = info.ViewsAwaitingGeo;
+            _countryItems = countries.Select(c => new AnalyticsBarItem(AnalyticsFormat.CountryName(c.Key, c.Label ?? "Unknown"), c.PageViews, c.Visitors, Prefix: AnalyticsFormat.Flag(c.Key), Href: c.Key is null ? null : $"/admin/analytics/visitors?country={c.Key}")).ToList();
+            _pointsDirty = true;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task PushPointsAsync(bool fit)
+    {
+        if (_module is null || _mapReady != true) return;
+        var payload = _points.Select(p => new
+        {
+            lat = p.Latitude,
+            lon = p.Longitude,
+            label = AnalyticsFormat.Place(p.City, p.Region, p.Country, p.CountryCode),
+            views = p.PageViews,
+            visitors = p.Visitors
+        }).ToList();
+        try
+        {
+            await _module.InvokeVoidAsync("setPoints", _mapElement, payload, fit);
+        }
+        catch (JSException ex)
+        {
+            _error = "The map could not draw the visits: " + ex.Message;
+        }
+    }
+
+    private Task FitAsync() => PushPointsAsync(fit: true);
+
+    private async Task FocusAsync(AnalyticsGeoPoint p)
+    {
+        if (_module is null || _mapReady != true) return;
+        try { await _module.InvokeVoidAsync("focus", _mapElement, p.Latitude, p.Longitude, 8); } catch (JSException) { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_module is null) return;
+        try
+        {
+            await _module.InvokeVoidAsync("dispose", _mapElement);
+            await _module.DisposeAsync();
+        }
+        catch (JSDisconnectedException) { }
+        catch (JSException) { }
+    }
+}

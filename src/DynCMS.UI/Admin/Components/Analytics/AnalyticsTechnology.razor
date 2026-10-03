@@ -1,0 +1,93 @@
+@namespace DynCMS.UI.Admin.Components.Analytics
+@using DynCMS.Core.Analytics
+@inject IAnalyticsService Analytics
+
+<div class="dc-an-view">
+    @if (_error is not null)
+    {
+        <div class="dc-alert dc-alert-error"><Icon Name="alert" Size="15" /> <span>@_error</span></div>
+    }
+    else if (_loading && _browsers.Count == 0)
+    {
+        <div class="dc-loading"><span class="dc-spinner"></span> Loading…</div>
+    }
+    else
+    {
+        <div class="dc-stats dc-an-stats">
+            @foreach (var d in _deviceStats)
+            {
+                <div class="dc-stat @(d.Key == DeviceTypes.Mobile ? "dc-stat-green" : d.Key == DeviceTypes.Tablet ? "dc-stat-violet" : "")">
+                    <span class="dc-stat-tile"><Icon Name="@AnalyticsFormat.DeviceIcon(d.Key)" Size="20" /></span>
+                    <strong>@AnalyticsFormat.Share(d.PageViews, _total)</strong>
+                    <span>@(d.Key ?? "Unknown") <small class="dc-muted">· @AnalyticsFormat.Number(d.PageViews) views</small></span>
+                </div>
+            }
+        </div>
+
+        <div class="dc-an-grid">
+            <section class="dc-card">
+                <div class="dc-card-head"><h3><Icon Name="globe" Size="16" /> Browsers</h3></div>
+                <AnalyticsBarList Items="_browsers" Heading="Browser" ShowVisitors="true" ShowShare="true" Total="_total" />
+            </section>
+            <section class="dc-card">
+                <div class="dc-card-head"><h3><Icon Name="cpu" Size="16" /> Operating systems</h3></div>
+                <AnalyticsBarList Items="_systems" Heading="System" ShowVisitors="true" ShowShare="true" Total="_total" />
+            </section>
+            <section class="dc-card">
+                <div class="dc-card-head"><h3><Icon Name="smartphone" Size="16" /> Devices</h3></div>
+                <AnalyticsBarList Items="_devices" Heading="Device" ShowVisitors="true" ShowShare="true" Total="_total" />
+            </section>
+            <section class="dc-card">
+                <div class="dc-card-head"><h3><Icon Name="type" Size="16" /> Languages</h3><span class="dc-muted">Browser preference</span></div>
+                <AnalyticsBarList Items="_languages" Heading="Language" ShowVisitors="true" ShowShare="true" Total="_total" />
+            </section>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public AnalyticsRange Range { get; set; } = AnalyticsRange.LastDays(30);
+
+    private AnalyticsRange? _loaded;
+    private IReadOnlyList<AnalyticsBarItem> _browsers = [], _systems = [], _devices = [], _languages = [];
+    private IReadOnlyList<AnalyticsCount> _deviceStats = [];
+    private long _total;
+    private bool _loading;
+    private string? _error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loaded == Range) return;
+        _loaded = Range;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            var range = Range;
+            var browsers = await Analytics.GetBrowsersAsync(range, 20);
+            var systems = await Analytics.GetOperatingSystemsAsync(range, 20);
+            var devices = await Analytics.GetDevicesAsync(range);
+            var languages = await Analytics.GetLanguagesAsync(range, 20);
+
+            _total = devices.Sum(d => d.PageViews);
+            _deviceStats = devices;
+            _browsers = browsers.Select(b => new AnalyticsBarItem(b.Key ?? "Unknown", b.PageViews, b.Visitors, Icon: "globe")).ToList();
+            _systems = systems.Select(s => new AnalyticsBarItem(s.Key ?? "Unknown", s.PageViews, s.Visitors, Icon: "cpu")).ToList();
+            _devices = devices.Select(d => new AnalyticsBarItem(d.Key ?? "Unknown", d.PageViews, d.Visitors, Icon: AnalyticsFormat.DeviceIcon(d.Key))).ToList();
+            _languages = languages.Select(l => new AnalyticsBarItem(AnalyticsFormat.LanguageName(l.Key), l.PageViews, l.Visitors, Detail: l.Key, Icon: "type")).ToList();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

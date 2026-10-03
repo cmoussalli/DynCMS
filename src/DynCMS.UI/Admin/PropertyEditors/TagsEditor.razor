@@ -1,0 +1,45 @@
+@namespace DynCMS.UI.Admin.PropertyEditors
+@inherits PropertyEditorBase
+@using System.Text.Json
+
+<div class="dc-tags @(Invalid ? "dc-invalid" : null)">
+    @foreach (var tag in _tags)
+    {
+        <span class="dc-chip" @key="tag">
+            @tag
+            <button type="button" title="Remove" @onclick="() => RemoveAsync(tag)"><Icon Name="x" Size="12" /></button>
+        </span>
+    }
+    <input id="@InputId" class="dc-tags-input" type="text" placeholder="Add a tag and press Enter"
+           @bind="_draft" @bind:event="oninput" @onkeyup="OnKeyUp" />
+    <button type="button" class="dc-btn dc-btn-ghost dc-btn-sm" @onclick="AddAsync" disabled="@string.IsNullOrWhiteSpace(_draft)">Add</button>
+</div>
+
+@code {
+    private List<string> _tags = [];
+    private string? _draft;
+
+    protected override void OnParametersSet()
+    {
+        _tags = ContentValueConverter.Convert<List<string>>(Value) ?? [];
+    }
+
+    private Task OnKeyUp(KeyboardEventArgs e) => e.Key is "Enter" or "," ? AddAsync() : Task.CompletedTask;
+
+    private async Task AddAsync()
+    {
+        var tag = _draft?.Trim().TrimEnd(',').Trim();
+        _draft = null;
+        if (string.IsNullOrEmpty(tag) || _tags.Contains(tag, StringComparer.OrdinalIgnoreCase)) return;
+        _tags.Add(tag);
+        await PushAsync();
+    }
+
+    private async Task RemoveAsync(string tag)
+    {
+        _tags.Remove(tag);
+        await PushAsync();
+    }
+
+    private Task PushAsync() => SetValueAsync(_tags.Count == 0 ? null : JsonSerializer.Serialize(_tags));
+}

@@ -1,0 +1,20 @@
+@page "/"
+@page "/{*Path}"
+
+@*
+    Catch-all page: every public URL is offered to the running plugins first (a plugin page declared as
+    @page "/guestbook" is served at exactly that URL) and otherwise resolved against the content tree.
+    Admin routes (/admin/...) and /setup live in the DynCMS.UI assembly and take precedence
+    because literal route segments win over the catch-all parameter.
+*@
+
+<PluginPageOutlet Path="@("/" + Path)" Admin="false">
+    <CmsContentRenderer Path="@Path" Preview="@Preview" />
+</PluginPageOutlet>
+
+@code {
+    [Parameter] public string? Path { get; set; }
+
+    /// <summary>Append ?preview=true to view draft content (signed-in back-office users only).</summary>
+    [SupplyParameterFromQuery] public bool Preview { get; set; }
+}

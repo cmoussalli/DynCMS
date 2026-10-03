@@ -1,0 +1,346 @@
+@namespace DynCMS.UI.Admin.Components
+@using DynCMS.Core.Data
+@inject IDatabaseMaintenanceService Maintenance
+@inject DatabaseConfigurationStore Store
+@inject ToastService Toasts
+
+<div class="dc-page dc-data-section">
+    <header class="dc-page-head">
+        <h1><Icon Name="save" Size="22" /> @(IsAnalytics ? "Analytics backups & restore" : "Backups & restore")</h1>
+        <p class="dc-muted">
+            @if (IsAnalytics)
+            {
+                <text>Backups of the analytics database only: page views and cached locations. Restoring one never touches content, media, users or settings. </text>
+            }
+            @if (Provider == DatabaseProvider.Sqlite)
+            {
+                <text>Backups are consistent copies of the SQLite file stored in <code>@Maintenance.BackupFolder</code>. Restoring copies a backup back over the live database.</text>
+            }
+            else
+            {
+                <text>Backups run <code>BACKUP DATABASE</code> on the SQL Server, which writes the <code>.bak</code> file into its own default backup folder. Restoring runs <code>RESTORE DATABASE … WITH REPLACE</code> from that file.</text>
+            }
+        </p>
+    </header>
+
+    @if (IsAnalytics && !Store.IsAnalyticsSeparate)
+    {
+        <div class="dc-alert dc-alert-info">
+            <Icon Name="info" Size="15" />
+            <span>Analytics currently lives in the primary database, so it is covered by the <a href="/admin/data/backups">primary backups</a>. Give it <a href="/admin/data/analytics">its own database</a> to back it up and restore it on its own.</span>
+        </div>
+    }
+    else
+    {
+    <div class="dc-data-toolbar">
+        <input class="dc-input" type="text" placeholder="Optional note, e.g. “before redesign”" @bind="_note" disabled="@_busy" />
+        <button type="button" class="dc-btn dc-btn-primary" @onclick="CreateAsync" disabled="@_busy">
+            @if (_busy && _action == "create") { <span class="dc-spinner"></span> } else { <Icon Name="save" Size="14" /> }
+            <span>Create backup</span>
+        </button>
+        <label class="dc-btn dc-upload dc-data-upload" title="Upload a backup file to restore it later">
+            @if (_busy && _action == "upload") { <span class="dc-spinner"></span><span>Uploading @_uploadProgress%</span> } else { <Icon Name="upload" Size="14" /><span>Upload backup…</span> }
+            <InputFile OnChange="UploadAsync" accept="@Accept" disabled="@_busy" />
+        </label>
+        <span class="dc-spacer"></span>
+        <button type="button" class="dc-btn dc-btn-ghost" @onclick="LoadAsync" disabled="@_busy" title="Refresh"><Icon Name="refresh" Size="14" /></button>
+    </div>
+
+    @if (_error is not null)
+    {
+        <div class="dc-alert dc-alert-error"><Icon Name="alert" Size="15" /> <span>@_error</span></div>
+    }
+
+    <div class="dc-table-wrap">
+        @if (_backups is null)
+        {
+            <div class="dc-loading" style="padding:24px"><span class="dc-spinner"></span> Loading backups…</div>
+        }
+        else if (_backups.Count == 0)
+        {
+            <div class="dc-empty">
+                <Icon Name="save" Size="28" />
+                <p>No backups yet. Create one now, or upload a backup file.</p>
+            </div>
+        }
+        else
+        {
+            <table class="dc-table">
+                <thead><tr><th>Backup</th><th>Created</th><th class="dc-num">Size</th><th>Engine</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var b in _backups)
+                    {
+                        var compatible = b.Provider == Provider;
+                        <tr @key="b.FileName">
+                            <td>
+                                <span class="dc-data-name">
+                                    <strong title="@b.FullPath">@b.FileName</strong>
+                                    @if (!string.IsNullOrWhiteSpace(b.Note) || b.Database is not null)
+                                    {
+                                        <span class="dc-data-note">@(b.Database is not null ? b.Database + (b.Note is not null ? " · " : "") : "")@b.Note</span>
+                                    }
+                                </span>
+                            </td>
+                            <td title="@b.CreatedUtc.ToString("u")">@DataFormat.Local(b.CreatedUtc)<span class="dc-data-note">@DataFormat.Ago(b.CreatedUtc)</span></td>
+                            <td class="dc-num">@DataFormat.Bytes(b.Size)</td>
+                            <td>
+                                <span class="dc-badge @(compatible ? "dc-badge-info" : "dc-badge-muted")">@(b.Provider == DatabaseProvider.SqlServer ? "SQL Server" : "SQLite")</span>
+                                @if (!b.IsLocalFile)
+                                {
+                                    <span class="dc-badge dc-badge-muted" style="margin-left:6px" title="The file is not in this application's backup folder (it lives on the SQL Server).">Remote</span>
+                                }
+                            </td>
+                            <td class="dc-table-actions">
+                                @if (b.IsLocalFile)
+                                {
+                                    <a class="dc-btn dc-btn-sm" href="@DownloadUrl(b)" target="_blank" title="Download"><Icon Name="download" Size="14" /> Download</a>
+                                }
+                                <button type="button" class="dc-btn dc-btn-sm" @onclick="() => AskRestore(b)" disabled="@(_busy || !compatible)" title="@(compatible ? "Restore this backup" : "This backup was made with another database engine")"><Icon Name="rotate-ccw" Size="14" /> Restore</button>
+                                <button type="button" class="dc-btn dc-btn-sm dc-btn-danger-ghost" @onclick="() => AskDelete(b)" disabled="@_busy" title="Delete"><Icon Name="trash" Size="14" /></button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+    }
+</div>
+
+@if (_restoreTarget is not null)
+{
+    <Modal Title="Restore backup" Size="Modal.ModalSize.Small" OnClose="() => _restoreTarget = null">
+        <ChildContent>
+            <p class="dc-confirm-text">
+                Replace everything in the @(IsAnalytics ? "analytics" : "current") database with <strong>@_restoreTarget.FileName</strong>
+                (@DataFormat.Local(_restoreTarget.CreatedUtc))? @(IsAnalytics ? "Page views recorded after that backup are lost; content and users are not affected." : "Content, media records, users and sessions created after that backup are lost.")
+            </p>
+            <label class="dc-check">
+                <input type="checkbox" @bind="_backupFirst" disabled="@_busy" />
+                <span>Take a backup of the current database first</span>
+            </label>
+            @if (_restoreTarget.Provider == DatabaseProvider.SqlServer)
+            {
+                <p class="dc-muted" style="font-size:12.5px">The SQL Server reads the file from <code>@_restoreTarget.FullPath</code>. Other connections to the database are dropped while it restores.</p>
+            }
+        </ChildContent>
+        <Footer>
+            <button type="button" class="dc-btn" @onclick="() => _restoreTarget = null" disabled="@_busy">Cancel</button>
+            <button type="button" class="dc-btn dc-btn-danger" @onclick="RestoreAsync" disabled="@_busy">
+                @if (_busy && _action == "restore") { <span class="dc-spinner" style="border-color: rgba(255,255,255,.35); border-top-color: #fff;"></span><span>Restoring…</span> } else { <span>Restore</span> }
+            </button>
+        </Footer>
+    </Modal>
+}
+
+@if (_deleteTarget is not null)
+{
+    <ConfirmDialog Title="Delete backup"
+                   Message="@($"Delete {_deleteTarget.FileName}? {(_deleteTarget.IsLocalFile ? "The file is removed from the backup folder." : "Only the entry is removed; the file on the SQL Server stays.")}")"
+                   ConfirmText="Delete"
+                   Danger="true"
+                   OnConfirm="DeleteAsync"
+                   OnCancel="() => _deleteTarget = null" />
+}
+
+@code {
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    /// <summary>Which database's backups this panel manages.</summary>
+    [Parameter] public DatabaseRole Role { get; set; } = DatabaseRole.Primary;
+
+    private bool IsAnalytics => Role == DatabaseRole.Analytics;
+
+    private IReadOnlyList<DatabaseBackupInfo>? _backups;
+    private DatabaseBackupInfo? _restoreTarget;
+    private DatabaseBackupInfo? _deleteTarget;
+    private bool _backupFirst = true;
+    private bool _busy;
+    private string? _action;
+    private string? _error;
+    private string? _note;
+    private int _uploadProgress;
+
+    private DatabaseProvider Provider => Store.Resolve(Role)?.Provider ?? DatabaseProvider.Sqlite;
+    private string Accept => Provider == DatabaseProvider.Sqlite ? ".db,.sqlite,.sqlite3" : ".bak";
+
+    private static string DownloadUrl(DatabaseBackupInfo b) =>
+        ApplicationBuilderExtensions.BackupDownloadPattern.Replace("{name}", Uri.EscapeDataString(b.FileName));
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+        try
+        {
+            _backups = await Maintenance.ListBackupsAsync(Role);
+        }
+        catch (Exception ex)
+        {
+            _backups ??= [];
+            _error = ex.Message;
+        }
+    }
+
+    private async Task CreateAsync()
+    {
+        if (_busy) return;
+        _busy = true;
+        _action = "create";
+        _error = null;
+        try
+        {
+            var backup = await Maintenance.CreateBackupAsync(string.IsNullOrWhiteSpace(_note) ? null : _note.Trim(), Role);
+            _note = null;
+            Toasts.Success("Backup created", backup.IsLocalFile ? $"{backup.FileName} · {DataFormat.Bytes(backup.Size)}" : $"{backup.FileName} written on the SQL Server");
+            await LoadAsync();
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            Toasts.Error(ex, "Backup failed");
+        }
+        finally
+        {
+            _busy = false;
+            _action = null;
+        }
+    }
+
+    private async Task UploadAsync(InputFileChangeEventArgs e)
+    {
+        if (_busy) return;
+        var file = e.File;
+        _busy = true;
+        _action = "upload";
+        _uploadProgress = 0;
+        _error = null;
+        try
+        {
+            await using var stream = file.OpenReadStream(maxAllowedSize: 8L * 1024 * 1024 * 1024);
+            var progress = new ProgressStream(stream, file.Size, p => { _uploadProgress = p; _ = InvokeAsync(StateHasChanged); });
+            var backup = await Maintenance.ImportBackupAsync(file.Name, progress, Role);
+            Toasts.Success("Backup uploaded", backup.FileName);
+            await LoadAsync();
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            Toasts.Error(ex, "Upload failed");
+        }
+        finally
+        {
+            _busy = false;
+            _action = null;
+        }
+    }
+
+    private void AskRestore(DatabaseBackupInfo b) { _backupFirst = true; _restoreTarget = b; }
+    private void AskDelete(DatabaseBackupInfo b) => _deleteTarget = b;
+
+    private async Task RestoreAsync()
+    {
+        if (_busy || _restoreTarget is null) return;
+        var target = _restoreTarget;
+        _busy = true;
+        _action = "restore";
+        _error = null;
+        try
+        {
+            await Maintenance.RestoreBackupAsync(target.FileName, _backupFirst, Role);
+            _restoreTarget = null;
+            Toasts.Success(IsAnalytics ? "Analytics restored" : "Database restored", $"{(IsAnalytics ? "Analytics" : "Content")} now matches {target.FileName}.");
+            await LoadAsync();
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            Toasts.Error(ex, "Restore failed");
+        }
+        finally
+        {
+            _busy = false;
+            _action = null;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (_busy || _deleteTarget is null) return;
+        var target = _deleteTarget;
+        _deleteTarget = null;
+        _busy = true;
+        _action = "delete";
+        try
+        {
+            await Maintenance.DeleteBackupAsync(target.FileName);
+            Toasts.Success("Backup deleted", target.FileName);
+            await LoadAsync();
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            Toasts.Error(ex, "Delete failed");
+        }
+        finally
+        {
+            _busy = false;
+            _action = null;
+        }
+    }
+
+    /// <summary>Reports upload progress in whole percent while the browser stream is copied to disk.</summary>
+    private sealed class ProgressStream(Stream inner, long total, Action<int> report) : Stream
+    {
+        private long _read;
+        private int _last = -1;
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => total;
+        public override long Position { get => _read; set => throw new NotSupportedException(); }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
+        {
+            var n = await inner.ReadAsync(buffer, ct);
+            Advance(n);
+            return n;
+        }
+
+        public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken ct)
+        {
+            var n = await inner.ReadAsync(buffer.AsMemory(offset, count), ct);
+            Advance(n);
+            return n;
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            var n = inner.Read(buffer, offset, count);
+            Advance(n);
+            return n;
+        }
+
+        private void Advance(int n)
+        {
+            _read += n;
+            var percent = total <= 0 ? 100 : (int)Math.Min(100, _read * 100 / total);
+            if (percent != _last)
+            {
+                _last = percent;
+                report(percent);
+            }
+        }
+
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+}

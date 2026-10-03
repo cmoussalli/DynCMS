@@ -1,0 +1,73 @@
+@page "/admin/content"
+@page "/admin/content/{Id:guid}"
+@namespace DynCMS.UI.Admin.Pages
+@inject NavigationManager Nav
+
+<PageTitle>Content · DynCMS</PageTitle>
+
+<div class="dc-section">
+    <aside class="dc-tree-panel">
+        <div class="dc-panel-head">
+            <h2><span class="dc-panel-icon"><Icon Name="document" Size="15" /></span> Content</h2>
+            <button type="button" class="dc-btn dc-btn-icon" title="Create at root" @onclick="() => OpenCreate(null)"><Icon Name="plus" Size="16" /></button>
+        </div>
+        <div class="dc-tree-search">
+            <Icon Name="search" Size="14" />
+            <input type="search" placeholder="Filter content…" @bind="_filter" @bind:event="oninput" aria-label="Filter content" />
+        </div>
+        <ContentTree SelectedId="Id" Version="_version" Filter="@_filter" OnCreateRequested="OpenCreate" />
+    </aside>
+
+    <main class="dc-workspace">
+        @if (Id is Guid id)
+        {
+            <ContentEditor Id="id" Culture="@Culture" OnChanged="Bump" OnDeleted="OnDeleted" @key="id" />
+        }
+        else
+        {
+            <div class="dc-workspace-empty">
+                <span class="dc-empty-tile"><Icon Name="document" Size="32" /></span>
+                <h2>Your content, structured</h2>
+                <p>Select an item in the tree to edit it, or start something new.</p>
+                <button type="button" class="dc-btn dc-btn-primary" @onclick="() => OpenCreate(null)"><Icon Name="plus" Size="14" /> Create content</button>
+            </div>
+        }
+    </main>
+</div>
+
+@if (_createOpen)
+{
+    <CreateContentDialog ParentId="_createParent" OnCreated="OnCreated" OnCancel="() => _createOpen = false" />
+}
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+    /// <summary>Opens the editor in this language (ISO code), e.g. /admin/content/{id}?culture=de-DE.</summary>
+    [SupplyParameterFromQuery] public string? Culture { get; set; }
+
+    private int _version;
+    private bool _createOpen;
+    private Guid? _createParent;
+    private string? _filter;
+
+    private void OpenCreate(Guid? parentId)
+    {
+        _createParent = parentId;
+        _createOpen = true;
+    }
+
+    private void Bump() => _version++;
+
+    private void OnCreated(ContentNode node)
+    {
+        _createOpen = false;
+        _version++;
+        Nav.NavigateTo($"/admin/content/{node.Id}");
+    }
+
+    private void OnDeleted()
+    {
+        _version++;
+        Nav.NavigateTo("/admin/content");
+    }
+}

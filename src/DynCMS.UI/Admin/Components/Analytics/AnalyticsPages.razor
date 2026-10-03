@@ -1,0 +1,105 @@
+@namespace DynCMS.UI.Admin.Components.Analytics
+@using DynCMS.Core.Analytics
+@inject IAnalyticsService Analytics
+
+<div class="dc-an-view">
+    <div class="dc-an-toolbar">
+        <div class="dc-search dc-an-search">
+            <Icon Name="search" Size="15" />
+            <input class="dc-input" type="search" placeholder="Filter by path or title…" @bind="_search" @bind:event="oninput" @bind:after="ReloadAsync" />
+        </div>
+        <span class="dc-muted">@_rows.Count page@(_rows.Count == 1 ? "" : "s") · @AnalyticsFormat.Number(_total) views</span>
+    </div>
+
+    @if (_error is not null)
+    {
+        <div class="dc-alert dc-alert-error"><Icon Name="alert" Size="15" /> <span>@_error</span></div>
+    }
+    else if (_loading && _rows.Count == 0)
+    {
+        <div class="dc-loading"><span class="dc-spinner"></span> Loading pages…</div>
+    }
+    else if (_rows.Count == 0)
+    {
+        <div class="dc-an-empty dc-card"><Icon Name="document" Size="26" /><span>No page views in this period.</span></div>
+    }
+    else
+    {
+        <div class="dc-table-wrap">
+            <table class="dc-table dc-an-table">
+                <thead>
+                    <tr>
+                        <th>Page</th>
+                        <th class="dc-num">Views</th>
+                        <th class="dc-num">Visitors</th>
+                        <th class="dc-num">Share</th>
+                        <th style="width:220px">Share of traffic</th>
+                        <th class="dc-table-actions"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var p in _rows)
+                    {
+                        <tr>
+                            <td>
+                                <div class="dc-an-page">
+                                    <a href="/admin/analytics/visitors?path=@Uri.EscapeDataString(p.Path)" title="Show the page views of this page"><code>@p.Path</code></a>
+                                    @if (p.NotFound) { <span class="dc-badge dc-badge-warn">404</span> }
+                                    @if (!string.IsNullOrEmpty(p.Title)) { <small>@p.Title</small> }
+                                </div>
+                            </td>
+                            <td class="dc-num"><strong>@AnalyticsFormat.Number(p.PageViews)</strong></td>
+                            <td class="dc-num">@AnalyticsFormat.Number(p.Visitors)</td>
+                            <td class="dc-num dc-muted">@AnalyticsFormat.Share(p.PageViews, _total)</td>
+                            <td><div class="dc-an-meter"><span style="width:@(_max == 0 ? 0 : 100.0 * p.PageViews / _max)%"></span></div></td>
+                            <td class="dc-table-actions">
+                                <a class="dc-btn dc-btn-sm dc-btn-ghost" href="@p.Path" target="_blank" rel="noopener" title="Open on the site"><Icon Name="external" Size="13" /></a>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public AnalyticsRange Range { get; set; } = AnalyticsRange.LastDays(30);
+
+    private AnalyticsRange? _loaded;
+    private IReadOnlyList<AnalyticsPageStat> _rows = [];
+    private long _total, _max;
+    private string _search = string.Empty;
+    private bool _loading;
+    private string? _error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loaded == Range) return;
+        _loaded = Range;
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            var range = Range;
+            var rows = await Analytics.GetPagesAsync(range, 500, _search);
+            var summary = await Analytics.GetSummaryAsync(range);
+            _rows = rows;
+            _total = summary.PageViews;
+            _max = rows.Count == 0 ? 0 : rows.Max(r => r.PageViews);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

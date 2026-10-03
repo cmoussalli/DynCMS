@@ -1,0 +1,454 @@
+@namespace DynCMS.UI.Admin.Components
+@inject IContentTypeService ContentTypes
+@inject ITemplateRegistry Templates
+@inject IPropertyEditorRegistry Editors
+@inject ToastService Toasts
+@inject NavigationManager Nav
+
+@if (_type is null)
+{
+    <div class="dc-workspace-empty">
+        @if (_loading)
+        {
+            <div class="dc-loading"><span class="dc-spinner"></span> Loading…</div>
+        }
+        else
+        {
+            <span class="dc-empty-tile"><Icon Name="alert" Size="32" /></span>
+            <h2>Document type not found</h2>
+            <p>It may have been deleted.</p>
+        }
+    </div>
+}
+else
+{
+    <div class="dc-editor">
+        <header class="dc-editor-head">
+            <div class="dc-editor-title">
+                <span class="dc-editor-type"><Icon Name="box" Size="14" /> Document type</span>
+                <div class="dc-inline">
+                    <div class="dc-iconpick">
+                        <button type="button" class="dc-iconpick-btn" title="Choose icon" @onclick="() => _iconOpen = !_iconOpen"><Icon Name="@_type.Icon" Size="22" /></button>
+                        @if (_iconOpen)
+                        {
+                            <div class="dc-iconpick-grid">
+                                @foreach (var name in Icon.Names)
+                                {
+                                    <button type="button" class="@(name == _type.Icon ? "dc-active" : null)" title="@name" @onclick="() => { _type.Icon = name; _iconOpen = false; }"><Icon Name="@name" Size="18" /></button>
+                                }
+                            </div>
+                        }
+                    </div>
+                    <input class="dc-editor-name" type="text" value="@_type.Name" placeholder="Document type name" @oninput="OnNameInput" />
+                </div>
+            </div>
+            <div class="dc-editor-status">
+                @if (_usage > 0)
+                {
+                    <span class="dc-badge dc-badge-info">@_usage content item(s)</span>
+                }
+            </div>
+        </header>
+
+        <nav class="dc-tabs">
+            <button type="button" class="@(_tab == "design" ? "dc-active" : null)" @onclick='() => _tab = "design"'>Design</button>
+            <button type="button" class="@(_tab == "structure" ? "dc-active" : null)" @onclick='() => _tab = "structure"'>Structure</button>
+            <button type="button" class="@(_tab == "templates" ? "dc-active" : null)" @onclick='() => _tab = "templates"'>Templates</button>
+            <button type="button" class="@(_tab == "info" ? "dc-active" : null)" @onclick='() => _tab = "info"'><Icon Name="info" Size="14" /> Info</button>
+        </nav>
+
+        <div class="dc-editor-body">
+            @if (_tab == "design")
+            {
+                foreach (var group in _groups)
+                {
+                    var g = group;
+                    <section class="dc-group" @key="g">
+                        <header class="dc-group-head">
+                            <input class="dc-group-name" type="text" value="@g" @onchange="e => RenameGroup(g, e.Value?.ToString())" title="Rename group" />
+                            <span class="dc-spacer"></span>
+                            <button type="button" class="dc-btn dc-btn-sm" @onclick="() => OpenAddProperty(g)"><Icon Name="plus" Size="14" /> Add property</button>
+                            <button type="button" class="dc-btn dc-btn-icon" title="Remove group" @onclick="() => RemoveGroup(g)" disabled="@(_groups.Count <= 1)"><Icon Name="trash" Size="14" /></button>
+                        </header>
+                        @{
+                            var props = _type.Properties.Where(p => p.GroupName == g).OrderBy(p => p.SortOrder).ToList();
+                        }
+                        @if (props.Count == 0)
+                        {
+                            <p class="dc-muted dc-pad" style="padding:14px 16px">No properties in this group yet. Use <strong>Add property</strong> to get started.</p>
+                        }
+                        <ul class="dc-proplist">
+                            @foreach (var p in props)
+                            {
+                                var editor = Editors.Get(p.EditorAlias);
+                                <li @key="p.Id">
+                                    <Icon Name="@(editor?.Icon ?? "edit")" Size="16" />
+                                    <div class="dc-proplist-text">
+                                        <strong>@p.Name @if (p.Mandatory) { <span class="dc-required">*</span> }</strong>
+                                        <span>
+                                            <code>@p.Alias</code> · @(editor?.Name ?? p.EditorAlias)
+                                            @if (_type.VariesByCulture)
+                                            {
+                                                if (p.VariesByCulture)
+                                                {
+                                                    <span class="dc-vary dc-vary-culture" title="Stored per language"><Icon Name="globe" Size="11" /> Per language</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="dc-vary dc-vary-shared" title="One value for every language"><Icon Name="link" Size="11" /> Shared</span>
+                                                }
+                                            }
+                                        </span>
+                                        @if (!string.IsNullOrWhiteSpace(p.Description))
+                                        {
+                                            <small class="dc-muted">@p.Description</small>
+                                        }
+                                    </div>
+                                    <div class="dc-proplist-actions">
+                                        <button type="button" class="dc-btn dc-btn-icon" title="Move up" @onclick="() => MoveProperty(p, -1)"><Icon Name="arrow-up" Size="14" /></button>
+                                        <button type="button" class="dc-btn dc-btn-icon" title="Move down" @onclick="() => MoveProperty(p, 1)"><Icon Name="arrow-down" Size="14" /></button>
+                                        <button type="button" class="dc-btn dc-btn-icon" title="Edit" @onclick="() => OpenEditProperty(p)"><Icon Name="edit" Size="14" /></button>
+                                        <button type="button" class="dc-btn dc-btn-icon" title="Remove" @onclick="() => _type.Properties.Remove(p)"><Icon Name="trash" Size="14" /></button>
+                                    </div>
+                                </li>
+                            }
+                        </ul>
+                    </section>
+                }
+                <div class="dc-inline dc-mt">
+                    <input class="dc-input dc-input-narrow" type="text" placeholder="New group name" @bind="_newGroup" @bind:event="oninput" />
+                    <button type="button" class="dc-btn dc-btn-sm" disabled="@string.IsNullOrWhiteSpace(_newGroup)" @onclick="AddGroup"><Icon Name="plus" Size="14" /> Add group</button>
+                </div>
+            }
+            else if (_tab == "structure")
+            {
+                <div class="dc-info-grid">
+                    <div class="dc-info-card">
+                        <h4>Placement</h4>
+                        <label class="dc-check">
+                            <input type="checkbox" @bind="_type.AllowedAsRoot" /> <span>Allow as root (can be created at the top of the tree)</span>
+                        </label>
+                    </div>
+                    <div class="dc-info-card">
+                        <h4>Languages</h4>
+                        <label class="dc-check">
+                            <input type="checkbox" @bind="_type.VariesByCulture" /> <span>Allow varying by language</span>
+                        </label>
+                        <small class="dc-muted">
+                            Content of this type gets a name, URL segment and publish state per language (<a href="/admin/settings/languages">Settings → Languages</a>).
+                            Tick <em>Vary by language</em> on the properties that should differ per language; the others are shared.
+                        </small>
+                        @if (_type.VariesByCulture && !_type.Properties.Any(p => p.VariesByCulture))
+                        {
+                            <p class="dc-muted dc-mt"><Icon Name="info" Size="13" /> No property varies yet: only the name and URL will differ per language.</p>
+                        }
+                    </div>
+                    <div class="dc-info-card">
+                        <h4>Allowed child document types</h4>
+                        @if (_allTypes.Count == 0)
+                        {
+                            <p class="dc-muted">Save this document type first, then choose which types may be created below it.</p>
+                        }
+                        @foreach (var t in _allTypes)
+                        {
+                            <label class="dc-check" @key="t.Id">
+                                <input type="checkbox" checked="@_type.AllowedChildTypeAliases.Contains(t.Alias, StringComparer.OrdinalIgnoreCase)"
+                                       @onchange="e => ToggleChild(t.Alias, e.Value is true)" />
+                                <span><Icon Name="@t.Icon" Size="14" /> @t.Name @(t.Id == _type.Id ? "(itself)" : "")</span>
+                            </label>
+                        }
+                    </div>
+                </div>
+            }
+            else if (_tab == "templates")
+            {
+                <div class="dc-info-grid">
+                    <div class="dc-info-card">
+                        <h4>Allowed templates</h4>
+                        @if (Templates.Pages.Count == 0)
+                        {
+                            <p class="dc-muted">No page templates yet. <a href="/admin/settings/templates/new">Create one</a> in Settings → Templates, or register Blazor components with <code>AddTemplate&lt;T&gt;("alias")</code> in the host application.</p>
+                        }
+                        @foreach (var t in Templates.Pages)
+                        {
+                            <label class="dc-check" @key="t.Alias">
+                                <input type="checkbox" checked="@_type.AllowedTemplateAliases.Contains(t.Alias, StringComparer.OrdinalIgnoreCase)"
+                                       @onchange="e => ToggleTemplate(t.Alias, e.Value is true)" />
+                                <span>@t.Name <code>@t.Alias</code>
+                                    @if (t.IsStored)
+                                    {
+                                        <a class="dc-badge dc-badge-success" href="/admin/settings/templates/@t.StoredId" title="Edit this template">Stored</a>
+                                    }
+                                </span>
+                            </label>
+                        }
+                        <small class="dc-muted"><a href="/admin/settings/templates/new">New template</a> · partials are not listed here: they are rendered from a template, not picked on content.</small>
+                    </div>
+                    <div class="dc-info-card">
+                        <h4>Default template</h4>
+                        <select class="dc-input" value="@(_type.DefaultTemplateAlias ?? string.Empty)" @onchange="e => _type.DefaultTemplateAlias = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString()">
+                            <option value="">— None —</option>
+                            @foreach (var alias in _type.AllowedTemplateAliases)
+                            {
+                                <option value="@alias" selected="@(alias == _type.DefaultTemplateAlias)">@(Templates.Get(alias)?.Name ?? alias)</option>
+                            }
+                        </select>
+                        <small class="dc-muted">New content of this type starts with the default template.</small>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="dc-info-grid">
+                    <div class="dc-info-card">
+                        <h4>Identity</h4>
+                        <label class="dc-field">
+                            <span class="dc-label">Alias</span>
+                            <input class="dc-input dc-mono" type="text" value="@_type.Alias" @oninput="OnAliasInput" />
+                        </label>
+                        <label class="dc-field">
+                            <span class="dc-label">Description</span>
+                            <textarea class="dc-input" rows="3" @bind="_type.Description"></textarea>
+                        </label>
+                    </div>
+                    <div class="dc-info-card">
+                        <h4>Details</h4>
+                        <dl>
+                            <dt>Id</dt><dd><code>@_type.Id</code></dd>
+                            <dt>Created</dt><dd>@_type.CreatedAt.ToLocalTime().ToString("g")</dd>
+                            <dt>Updated</dt><dd>@_type.UpdatedAt.ToLocalTime().ToString("g")</dd>
+                            <dt>Properties</dt><dd>@_type.Properties.Count</dd>
+                        </dl>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <footer class="dc-editor-foot">
+            @if (!IsNew)
+            {
+                <button type="button" class="dc-btn dc-btn-danger-ghost" @onclick="() => _confirmDelete = true"><Icon Name="trash" Size="14" /> Delete</button>
+            }
+            <span class="dc-spacer"></span>
+            <button type="button" class="dc-btn dc-btn-primary" disabled="@_busy" @onclick="SaveAsync"><Icon Name="save" Size="14" /> Save</button>
+        </footer>
+    </div>
+
+    @if (_propertyDialog is not null)
+    {
+        <PropertyDialog Property="_propertyDialog" Groups="_groups" IsNew="_propertyIsNew" TypeVariesByCulture="_type.VariesByCulture" OnSave="ApplyProperty" OnCancel="() => _propertyDialog = null" />
+    }
+
+    @if (_confirmDelete)
+    {
+        <ConfirmDialog Title="Delete document type" Message="@($"Delete \"{_type.Name}\"? This is only possible when no content uses it.")"
+                       ConfirmText="Delete" Danger="true" OnConfirm="DeleteAsync" OnCancel="() => _confirmDelete = false" />
+    }
+}
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+    [Parameter] public EventCallback OnSaved { get; set; }
+    [Parameter] public EventCallback OnDeleted { get; set; }
+
+    private ContentType? _type;
+    private IReadOnlyList<ContentType> _allTypes = [];
+    private List<string> _groups = ["Content"];
+    private string _tab = "design";
+    private string? _newGroup;
+    private bool _loading = true;
+    private bool _busy;
+    private bool _aliasEdited;
+    private bool _iconOpen;
+    private bool _confirmDelete;
+    private int _usage;
+    private Guid? _loadedId = Guid.Empty;
+
+    private PropertyType? _propertyDialog;
+    private bool _propertyIsNew;
+    private PropertyType? _propertyOriginal;
+
+    private bool IsNew => Id is null;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedId == Id && _type is not null) return;
+        _loadedId = Id;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _allTypes = await ContentTypes.GetAllAsync();
+        if (Id is Guid id)
+        {
+            _type = await ContentTypes.GetAsync(id);
+            _usage = _type is null ? 0 : await ContentTypes.CountContentAsync(id);
+            _aliasEdited = true;
+        }
+        else
+        {
+            _type = new ContentType { Icon = "document" };
+            _usage = 0;
+            _aliasEdited = false;
+        }
+        _groups = _type?.Groups.ToList() ?? [];
+        if (_groups.Count == 0) _groups = ["Content"];
+        _loading = false;
+    }
+
+    private void OnNameInput(ChangeEventArgs e)
+    {
+        _type!.Name = e.Value?.ToString() ?? string.Empty;
+        if (!_aliasEdited) _type.Alias = Slug.ToAlias(_type.Name);
+    }
+
+    private void OnAliasInput(ChangeEventArgs e)
+    {
+        _type!.Alias = e.Value?.ToString() ?? string.Empty;
+        _aliasEdited = !string.IsNullOrEmpty(_type.Alias);
+    }
+
+    private void AddGroup()
+    {
+        var g = _newGroup?.Trim();
+        if (string.IsNullOrEmpty(g) || _groups.Contains(g, StringComparer.OrdinalIgnoreCase)) return;
+        _groups.Add(g);
+        _newGroup = null;
+    }
+
+    private void RenameGroup(string oldName, string? newName)
+    {
+        newName = newName?.Trim();
+        if (string.IsNullOrEmpty(newName) || newName == oldName) return;
+        var idx = _groups.IndexOf(oldName);
+        if (idx >= 0) _groups[idx] = newName;
+        foreach (var p in _type!.Properties.Where(p => p.GroupName == oldName)) p.GroupName = newName;
+    }
+
+    private void RemoveGroup(string name)
+    {
+        if (_groups.Count <= 1) return;
+        _groups.Remove(name);
+        var target = _groups[0];
+        foreach (var p in _type!.Properties.Where(p => p.GroupName == name)) p.GroupName = target;
+    }
+
+    private void OpenAddProperty(string group)
+    {
+        _propertyIsNew = true;
+        _propertyOriginal = null;
+        _propertyDialog = new PropertyType { GroupName = group, EditorAlias = PropertyEditorAliases.TextBox };
+    }
+
+    private void OpenEditProperty(PropertyType p)
+    {
+        _propertyIsNew = false;
+        _propertyOriginal = p;
+        _propertyDialog = new PropertyType
+        {
+            Id = p.Id, Alias = p.Alias, Name = p.Name, Description = p.Description, EditorAlias = p.EditorAlias,
+            GroupName = p.GroupName, Mandatory = p.Mandatory, VariesByCulture = p.VariesByCulture, SortOrder = p.SortOrder,
+            Config = new Dictionary<string, string>(p.Config, StringComparer.OrdinalIgnoreCase)
+        };
+    }
+
+    private void ApplyProperty(PropertyType edited)
+    {
+        if (string.IsNullOrWhiteSpace(edited.Alias)) edited.Alias = Slug.ToAlias(edited.Name);
+        if (_type!.Properties.Any(p => p.Id != edited.Id && p.Alias.Equals(edited.Alias, StringComparison.OrdinalIgnoreCase)))
+        {
+            Toasts.Error("Duplicate alias", $"Another property already uses the alias '{edited.Alias}'.");
+            return;
+        }
+
+        if (_propertyOriginal is null)
+        {
+            edited.SortOrder = _type.Properties.Count == 0 ? 0 : _type.Properties.Max(p => p.SortOrder) + 1;
+            _type.Properties.Add(edited);
+        }
+        else
+        {
+            var o = _propertyOriginal;
+            o.Alias = edited.Alias; o.Name = edited.Name; o.Description = edited.Description; o.EditorAlias = edited.EditorAlias;
+            o.GroupName = edited.GroupName; o.Mandatory = edited.Mandatory; o.VariesByCulture = edited.VariesByCulture; o.Config = edited.Config;
+        }
+        Renumber();
+        _propertyDialog = null;
+    }
+
+    private void MoveProperty(PropertyType p, int direction)
+    {
+        var siblings = _type!.Properties.Where(x => x.GroupName == p.GroupName).OrderBy(x => x.SortOrder).ToList();
+        var i = siblings.IndexOf(p);
+        var j = Math.Clamp(i + direction, 0, siblings.Count - 1);
+        if (i == j) return;
+        (siblings[i].SortOrder, siblings[j].SortOrder) = (siblings[j].SortOrder, siblings[i].SortOrder);
+        Renumber();
+    }
+
+    private void Renumber()
+    {
+        var ordered = _groups.SelectMany(g => _type!.Properties.Where(p => p.GroupName == g).OrderBy(p => p.SortOrder))
+            .Concat(_type!.Properties.Where(p => !_groups.Contains(p.GroupName)))
+            .ToList();
+        for (var i = 0; i < ordered.Count; i++) ordered[i].SortOrder = i;
+    }
+
+    private void ToggleChild(string alias, bool on)
+    {
+        if (on && !_type!.AllowedChildTypeAliases.Contains(alias, StringComparer.OrdinalIgnoreCase)) _type.AllowedChildTypeAliases.Add(alias);
+        if (!on) _type!.AllowedChildTypeAliases.RemoveAll(a => a.Equals(alias, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void ToggleTemplate(string alias, bool on)
+    {
+        if (on && !_type!.AllowedTemplateAliases.Contains(alias, StringComparer.OrdinalIgnoreCase)) _type.AllowedTemplateAliases.Add(alias);
+        if (!on)
+        {
+            _type!.AllowedTemplateAliases.RemoveAll(a => a.Equals(alias, StringComparison.OrdinalIgnoreCase));
+            if (string.Equals(_type.DefaultTemplateAlias, alias, StringComparison.OrdinalIgnoreCase)) _type.DefaultTemplateAlias = null;
+        }
+        if (on && _type!.DefaultTemplateAlias is null) _type.DefaultTemplateAlias = alias;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_type is null) return;
+        _busy = true;
+        try
+        {
+            var wasNew = IsNew;
+            Renumber();
+            _type = await ContentTypes.SaveAsync(_type);
+            _groups = _groups.Where(g => _type.Properties.Any(p => p.GroupName == g)).Concat(_type.Groups).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (_groups.Count == 0) _groups = ["Content"];
+            Toasts.Success("Document type saved", _type.Name);
+            await OnSaved.InvokeAsync();
+            if (wasNew) Nav.NavigateTo($"/admin/settings/document-types/{_type.Id}");
+            else _allTypes = await ContentTypes.GetAllAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            Toasts.Error(ex, "Could not save");
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task DeleteAsync()
+    {
+        _confirmDelete = false;
+        if (_type is null) return;
+        try
+        {
+            await ContentTypes.DeleteAsync(_type.Id);
+            Toasts.Info("Document type deleted", _type.Name);
+            await OnDeleted.InvokeAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            Toasts.Error(ex, "Cannot delete");
+        }
+    }
+}

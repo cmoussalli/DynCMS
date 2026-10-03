@@ -1,0 +1,75 @@
+@namespace DynCMS.UI.Admin.Components
+@using DynCMS.Core.Data
+@inject IDatabaseMaintenanceService Maintenance
+@inject DatabaseConfigurationStore Store
+@inject NavigationManager Nav
+
+<div class="dc-page dc-data-section">
+    <header class="dc-page-head">
+        <h1><Icon Name="rotate-ccw" Size="22" /> Reset configuration</h1>
+        <p class="dc-muted">Remove the database configuration and run the first-run setup again.</p>
+    </header>
+
+    <section class="dc-card dc-danger-zone">
+        <h3><Icon Name="alert" Size="16" /> Remove <code>@Path.GetFileName(Store.FilePath)</code></h3>
+        <p style="font-size:13.5px">This deletes the configuration file the setup page created and puts the application back into setup mode:</p>
+        <ul>
+            <li>The file <code>@Store.FilePath</code> is deleted.</li>
+            <li>Every request, including this back office, is redirected to <code>/setup</code> until a database is configured again.</li>
+            <li>The database itself is <strong>not</strong> touched. Choose “Use an existing database” on the setup page to reconnect to it, with all its content and users.</li>
+            <li>Everyone is signed out.</li>
+        </ul>
+
+        @if (_error is not null)
+        {
+            <div class="dc-alert dc-alert-error" style="margin-top:14px"><Icon Name="alert" Size="15" /> <span>@_error</span></div>
+        }
+
+        <label class="dc-check" style="margin-top:16px">
+            <input type="checkbox" @bind="_acknowledged" disabled="@_busy" />
+            <span>I understand that the setup page will open next and that I need the connection details to reconnect.</span>
+        </label>
+
+        <div class="dc-data-actions">
+            <button type="button" class="dc-btn dc-btn-danger" @onclick="() => _confirm = true" disabled="@(_busy || !_acknowledged)">
+                @if (_busy) { <span class="dc-spinner" style="border-color: rgba(255,255,255,.35); border-top-color: #fff;"></span><span>Removing…</span> } else { <Icon Name="trash" Size="14" /><span>Remove configuration and open setup</span> }
+            </button>
+            <a class="dc-btn" href="/admin/data/backups"><Icon Name="save" Size="14" /> Take a backup first</a>
+        </div>
+    </section>
+</div>
+
+@if (_confirm)
+{
+    <ConfirmDialog Title="Remove the database configuration?"
+                   Message="@($"{Store.FilePath} is deleted and the application returns to the setup page. The database keeps its content.")"
+                   ConfirmText="Remove and open setup"
+                   Danger="true"
+                   OnConfirm="ResetAsync"
+                   OnCancel="() => _confirm = false" />
+}
+
+@code {
+    private bool _acknowledged;
+    private bool _confirm;
+    private bool _busy;
+    private string? _error;
+
+    private async Task ResetAsync()
+    {
+        _confirm = false;
+        if (_busy) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            await Maintenance.ResetConfigurationAsync();
+            Nav.NavigateTo(ApplicationBuilderExtensions.SetupPath, forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+            _busy = false;
+        }
+    }
+}

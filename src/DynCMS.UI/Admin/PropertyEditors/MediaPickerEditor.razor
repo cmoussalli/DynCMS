@@ -1,0 +1,64 @@
+@namespace DynCMS.UI.Admin.PropertyEditors
+@inherits PropertyEditorBase
+@inject IMediaService Media
+
+<div class="dc-picker @(Invalid ? "dc-invalid" : null)">
+    @if (_item is not null)
+    {
+        <div class="dc-picker-item">
+            @if (_item.IsImage)
+            {
+                <img class="dc-picker-thumb" src="@Media.GetUrl(_item)" alt="@_item.Name" />
+            }
+            else
+            {
+                <span class="dc-picker-thumb dc-picker-thumb-file"><Icon Name="file" Size="24" /></span>
+            }
+            <div class="dc-picker-text">
+                <strong>@_item.Name</strong>
+                <span>@_item.FileName · @FormatSize(_item.SizeBytes)</span>
+            </div>
+            <button type="button" class="dc-btn dc-btn-ghost" title="Remove" @onclick="() => SetValueAsync(null)"><Icon Name="x" Size="14" /></button>
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(Value))
+    {
+        <div class="dc-picker-item dc-muted">Media item not found. <button type="button" class="dc-link" @onclick="() => SetValueAsync(null)">Clear</button></div>
+    }
+    <button type="button" class="dc-btn" @onclick="() => _open = true"><Icon Name="image" Size="14" /> @( _item is null ? "Pick media" : "Change")</button>
+</div>
+
+@if (_open)
+{
+    <Modal Title="Select media" Size="Modal.ModalSize.Large" OnClose="() => _open = false">
+        <MediaBrowser PickMode="true" ImagesOnly="@ConfigBool("imagesOnly")" OnPick="OnPickedAsync" />
+    </Modal>
+}
+
+@code {
+    private MediaItem? _item;
+    private bool _open;
+    private string? _loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor == Value) return;
+        _loadedFor = Value;
+        _item = Guid.TryParse(Value, out var id) ? await Media.GetAsync(id) : null;
+    }
+
+    private async Task OnPickedAsync(MediaItem item)
+    {
+        _open = false;
+        _item = item;
+        _loadedFor = item.Id.ToString();
+        await SetValueAsync(item.Id.ToString());
+    }
+
+    internal static string FormatSize(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:0.#} KB",
+        _ => $"{bytes / (1024.0 * 1024.0):0.##} MB"
+    };
+}

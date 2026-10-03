@@ -1,0 +1,32 @@
+@namespace DynCMS.UI.Admin.Components
+@inject NavigationManager Nav
+
+@if (_denied)
+{
+    <PageTitle>Access denied · DynCMS</PageTitle>
+    <div class="dc-shell">
+        <div class="dc-denied">
+            <span class="dc-empty-tile"><Icon Name="lock" Size="32" /></span>
+            <h2>Access denied</h2>
+            <p class="dc-muted">Your account does not have permission to open this section.</p>
+            <a class="dc-btn dc-btn-primary" href="@DynCmsUi.AdminBasePath"><Icon Name="arrow-left" Size="14" /> Back to dashboard</a>
+        </div>
+    </div>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+    private bool _denied;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = AuthState is null ? null : await AuthState;
+        if (state?.User.Identity?.IsAuthenticated == true)
+        {
+            _denied = true;
+            return;
+        }
+        var returnUrl = Uri.EscapeDataString("/" + Nav.ToBaseRelativePath(Nav.Uri));
+        Nav.NavigateTo($"{DynCmsUi.LoginPath}?returnUrl={returnUrl}", forceLoad: true);
+    }
+}

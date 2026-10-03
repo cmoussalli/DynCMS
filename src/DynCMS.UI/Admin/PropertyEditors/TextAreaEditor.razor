@@ -1,0 +1,6 @@
+@namespace DynCMS.UI.Admin.PropertyEditors
+@inherits PropertyEditorBase
+
+<textarea id="@InputId" class="@InputClass" rows="@(ConfigInt("rows") ?? 5)" maxlength="@ConfigInt("maxLength")"
+          placeholder="@Config("placeholder")" value="@Value"
+          @oninput="e => SetValueAsync(e.Value?.ToString())"></textarea>

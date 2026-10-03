@@ -1,0 +1,116 @@
+@namespace DynCMS.UI.Admin.Components
+@inject IContentService Content
+
+<div class="dc-tree">
+    @if (_loading && _byParent is null)
+    {
+        <div class="dc-loading"><span class="dc-spinner"></span> Loading…</div>
+    }
+    else if (_byParent is null || !_byParent[null].Any())
+    {
+        <div class="dc-tree-empty">
+            <Icon Name="document" Size="28" />
+            <p>No content yet.</p>
+            <button type="button" class="dc-btn dc-btn-primary dc-btn-sm" @onclick="() => OnCreateRequested.InvokeAsync(null)"><Icon Name="plus" Size="14" /> Create content</button>
+        </div>
+    }
+    else if (!string.IsNullOrWhiteSpace(Filter))
+    {
+        var matches = _byId.Values
+            .Where(n => n.Name.Contains(Filter, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(n => n.Name, StringComparer.OrdinalIgnoreCase)
+            .Take(60)
+            .ToList();
+        if (matches.Count == 0)
+        {
+            <div class="dc-tree-empty">
+                <Icon Name="search" Size="24" />
+                <p>No content matches "@Filter".</p>
+            </div>
+        }
+        <ul class="dc-tree-list">
+            @foreach (var n in matches)
+            {
+                <li class="dc-tree-item" @key="n.Id">
+                    <div class="dc-tree-row @(SelectedId == n.Id ? "dc-selected" : null)" style="padding-left:6px">
+                        <a class="dc-tree-link" href="/admin/content/@n.Id" title="@n.ContentType.Name">
+                            <Icon Name="@n.ContentType.Icon" Size="15" />
+                            <span class="dc-tree-name">@n.Name</span>
+                            <small>@n.ContentType.Name</small>
+                        </a>
+                    </div>
+                </li>
+            }
+        </ul>
+    }
+    else
+    {
+        <ul class="dc-tree-list">
+            @foreach (var root in _byParent[null])
+            {
+                <ContentTreeNode Node="root" Tree="this" Depth="0" @key="root.Id" />
+            }
+        </ul>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid? SelectedId { get; set; }
+    [Parameter] public int Version { get; set; }
+    [Parameter] public string? Filter { get; set; }
+    [Parameter] public EventCallback<Guid?> OnCreateRequested { get; set; }
+
+    private ILookup<Guid?, ContentNode>? _byParent;
+    private Dictionary<Guid, ContentNode> _byId = [];
+    private readonly HashSet<Guid> _expanded = [];
+    private int _loadedVersion = -1;
+    private Guid? _lastSelected;
+    private bool _loading;
+
+    internal Guid? CurrentSelection => SelectedId;
+
+    internal bool IsExpanded(Guid id) => _expanded.Contains(id);
+
+    internal IEnumerable<ContentNode> ChildrenOf(Guid id) => _byParent?[id] ?? [];
+
+    internal bool HasChildren(Guid id) => _byParent?[id].Any() == true;
+
+    internal void Toggle(Guid id)
+    {
+        if (!_expanded.Remove(id)) _expanded.Add(id);
+        StateHasChanged();
+    }
+
+    internal Task RequestCreateAsync(Guid? parentId) => OnCreateRequested.InvokeAsync(parentId);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedVersion != Version)
+        {
+            _loadedVersion = Version;
+            await LoadAsync();
+        }
+
+        if (SelectedId != _lastSelected)
+        {
+            _lastSelected = SelectedId;
+            ExpandAncestors(SelectedId);
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        var all = await Content.GetTreeAsync();
+        _byId = all.ToDictionary(n => n.Id);
+        _byParent = all.ToLookup(n => n.ParentId);
+        ExpandAncestors(SelectedId);
+        _loading = false;
+    }
+
+    private void ExpandAncestors(Guid? id)
+    {
+        if (id is null || !_byId.TryGetValue(id.Value, out var node)) return;
+        foreach (var a in node.AncestorIds) _expanded.Add(a);
+    }
+}

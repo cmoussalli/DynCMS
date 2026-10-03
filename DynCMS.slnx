@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DynCMS.Core/DynCMS.Core.csproj" />
+    <Project Path="src/DynCMS.UI/DynCMS.UI.csproj" />
+    <Project Path="src/DynCMS.Host/DynCMS.Host.csproj" />
+    <Project Path="src/DynCMS.Web/DynCMS.Web.csproj" />
+  </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/DynCMS.Plugin.Guestbook/DynCMS.Plugin.Guestbook.csproj" />
+  </Folder>
+</Solution>

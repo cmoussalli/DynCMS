@@ -1,0 +1,109 @@
+@page "/admin/login"
+@namespace DynCMS.UI.Admin.Auth
+@layout BlankLayout
+@inject ICmsIdentity Identity
+@inject CookieAuthService CookieAuth
+@inject NavigationManager Nav
+
+<PageTitle>Sign in · DynCMS</PageTitle>
+
+<div class="dc-login">
+    <aside class="dc-login-aside">
+        <a class="dc-brand" href="/">
+            <span class="dc-brand-mark">D</span>
+            <span class="dc-brand-text"><strong>DynCMS</strong><span>Back office</span></span>
+        </a>
+
+        <div class="dc-login-copy">
+            <h2>Structured content, <em>beautifully managed.</em></h2>
+            <p>Model document types, build your content tree, organise media and publish with confidence, all from one place.</p>
+            <ul class="dc-login-features">
+                <li><Icon Name="box" Size="18" /> Flexible document types with reusable property editors</li>
+                <li><Icon Name="publish" Size="18" /> Draft and publish workflow with live preview</li>
+                <li><Icon Name="shield" Size="18" /> Role-based access for administrators and editors</li>
+            </ul>
+        </div>
+
+        <div class="dc-login-aside-foot">© @DateTime.Now.Year DynCMS · Built with .NET and Blazor</div>
+    </aside>
+
+    <div class="dc-login-main">
+        <div class="dc-login-card">
+            <div class="dc-login-brand">
+                <span class="dc-brand-mark">D</span>
+                <h1>Welcome back</h1>
+                <p>Sign in to continue to the back office.</p>
+            </div>
+
+            <form @onsubmit="SignInAsync" @onsubmit:preventDefault="true">
+                @if (_error is not null)
+                {
+                    <div class="dc-alert dc-alert-error"><Icon Name="alert" Size="16" /> @_error</div>
+                }
+
+                <label class="dc-field">
+                    <span class="dc-label">Username</span>
+                    <input class="dc-input" type="text" @bind="_userName" autocomplete="username" placeholder="Your username" />
+                </label>
+
+                <label class="dc-field">
+                    <span class="dc-label">Password</span>
+                    <input class="dc-input" type="password" @bind="_password" autocomplete="current-password" placeholder="••••••••" />
+                </label>
+
+                <button type="submit" class="dc-btn dc-btn-primary dc-btn-block" disabled="@_busy">
+                    @if (_busy)
+                    {
+                        <span class="dc-spinner" style="border-color: rgba(255,255,255,.35); border-top-color: #fff; width: 16px; height: 16px;"></span>
+                        <span>Signing in…</span>
+                    }
+                    else
+                    {
+                        <span>Sign in</span>
+                        <Icon Name="arrow-right" Size="15" />
+                    }
+                </button>
+            </form>
+
+            <p class="dc-login-foot dc-muted"><Icon Name="lock" Size="12" /> Secured by CMouss.IdentityFramework</p>
+        </div>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
+
+    private string _userName = string.Empty;
+    private string _password = string.Empty;
+    private string? _error;
+    private bool _busy;
+
+    private async Task SignInAsync()
+    {
+        if (_busy) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            var result = Identity.SignIn(_userName, _password);
+            if (!result.Success || result.Token is null)
+            {
+                _error = result.Error ?? "Sign-in failed.";
+                return;
+            }
+
+            // The identity framework's cookie service stores the token; the server-side
+            // authentication handler reads the same cookie on the next request.
+            await CookieAuth.SetTokenAsync(result.Token, Identity.TokenLifetime);
+
+            var target = !string.IsNullOrEmpty(ReturnUrl) && ReturnUrl.StartsWith('/') && !ReturnUrl.StartsWith("//")
+                ? ReturnUrl
+                : DynCmsUi.AdminBasePath;
+            Nav.NavigateTo(target, forceLoad: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

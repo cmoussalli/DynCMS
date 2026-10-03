@@ -1,0 +1,86 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject IPublishedContentQuery Query
+@inject NavigationManager Nav
+
+@*
+    The default public layout: the site name (the root content's name), the root's children as navigation, a
+    language switcher when the site has more than one language, a link to the back office, and a footer.
+    Replace it with DynCmsHostOptions.Layout.
+*@
+<div class="site">
+    <header class="site-header">
+        <div class="site-container site-header-inner">
+            <a class="site-logo" href="@(_root?.Url ?? "/")">
+                <span class="site-logo-mark">@Initial</span>
+                <span>@SiteName</span>
+            </a>
+            <nav class="site-nav">
+                @foreach (var item in _nav)
+                {
+                    <NavLink href="@item.Url">@item.Name</NavLink>
+                }
+            </nav>
+            @if (_languages.Count > 1)
+            {
+                <nav class="site-languages" aria-label="Languages">
+                    @foreach (var l in _languages)
+                    {
+                        <a href="@l.Url" hreflang="@l.IsoCode" class="@(l.IsCurrent ? "current" : null)" aria-current="@(l.IsCurrent ? "page" : null)" title="@l.Name">@Short(l.IsoCode)</a>
+                    }
+                </nav>
+            }
+            <a class="site-admin" href="@DynCmsUi.AdminBasePath">Back office</a>
+        </div>
+    </header>
+
+    <main class="site-main">
+        @Body
+    </main>
+
+    <footer class="site-footer">
+        <div class="site-container">
+            <span>© @DateTime.Now.Year @SiteName</span>
+            <span>Built with DynCMS</span>
+        </div>
+    </footer>
+</div>
+
+@code {
+    private PublishedContent? _root;
+    private IReadOnlyList<PublishedContent> _nav = [];
+    private IReadOnlyList<CultureLink> _languages = [];
+    private string? _loadedCulture;
+
+    private string SiteName => _root?.Name ?? "DynCMS";
+    private string Initial => SiteName[..1].ToUpperInvariant();
+
+    private static string Short(string isoCode) => isoCode.Split('-')[0].ToUpperInvariant();
+
+    protected override async Task OnInitializedAsync()
+    {
+        Nav.LocationChanged += OnLocationChanged;
+        await LoadAsync();
+    }
+
+    /// <summary>The header follows the language of the page: navigating from /about to /de/ueber-uns reloads it in German.</summary>
+    private async Task LoadAsync()
+    {
+        var culture = await Query.ResolveCultureAsync();
+        if (culture == _loadedCulture) return;
+        _loadedCulture = culture;
+
+        _root = await Query.GetRootAsync(culture: culture);
+        _nav = _root is null ? [] : await Query.GetChildrenAsync(_root.Id, culture: culture);
+        _languages = _root is null ? [] : await Query.GetCultureLinksAsync(_root.Id, culture: culture);
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) =>
+        _ = InvokeAsync(async () =>
+        {
+            await LoadAsync();
+            StateHasChanged();
+        });
+
+    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+}

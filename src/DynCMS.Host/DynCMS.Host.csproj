@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>DynCMS.Host</RootNamespace>
+    <AddRazorSupportForMvc>false</AddRazorSupportForMvc>
+    <StaticWebAssetBasePath>_content/DynCMS.Host</StaticWebAssetBasePath>
+    <Description>DynCMS host: turns an empty ASP.NET Core web project into a running CMS (services, pipeline, Blazor shell, catch-all page and a starter site).</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <SupportedPlatform Include="browser" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DynCMS.Core\DynCMS.Core.csproj" />
+    <ProjectReference Include="..\DynCMS.UI\DynCMS.UI.csproj" />
+  </ItemGroup>
+
+  <!-- MSBuild defaults for the consuming project (see build/DynCMS.Host.props). -->
+  <ItemGroup>
+    <None Include="build\DynCMS.Host.props" Pack="true" PackagePath="build\;buildTransitive\" />
+  </ItemGroup>
+
+</Project>

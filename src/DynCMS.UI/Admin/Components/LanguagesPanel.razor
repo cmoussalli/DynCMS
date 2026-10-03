@@ -1,0 +1,204 @@
+@namespace DynCMS.UI.Admin.Components
+@using System.Globalization
+@inject ILanguageService Languages
+@inject ToastService Toasts
+
+<div class="dc-page">
+    <header class="dc-page-head dc-page-head-row">
+        <div>
+            <h1><Icon Name="globe" Size="22" /> Languages</h1>
+            <p class="dc-muted">
+                The languages your site publishes content in. The <strong>default</strong> language is served at the root URL; every other
+                language lives under <code>/{iso-code}/</code>. Turn on <em>Allow varying by language</em> on a document type to give its
+                content a name, URL and values per language; content of other types is shared by all languages.
+            </p>
+        </div>
+    </header>
+
+    <div class="dc-table-wrap">
+        <table class="dc-table">
+            <thead><tr><th>Language</th><th>ISO code</th><th>URL prefix</th><th>Default</th><th>Mandatory</th><th>Fallback language</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var l in _languages)
+                {
+                    <tr @key="l.Id">
+                        <td>
+                            <input class="dc-input dc-input-inline" type="text" value="@l.Name" @onchange="e => RenameAsync(l, e.Value?.ToString())" />
+                        </td>
+                        <td><code>@l.IsoCode</code> <small class="dc-muted">@l.Culture.NativeName</small></td>
+                        <td><code>@(l.IsDefault ? "/" : "/" + l.UrlPrefix + "/")</code></td>
+                        <td>
+                            @if (l.IsDefault)
+                            {
+                                <span class="dc-badge dc-badge-success">Default</span>
+                            }
+                            else
+                            {
+                                <button type="button" class="dc-btn dc-btn-sm" disabled="@_busy" @onclick="() => SetDefaultAsync(l)">Make default</button>
+                            }
+                        </td>
+                        <td>
+                            <label class="dc-check" style="margin:0">
+                                <input type="checkbox" checked="@l.IsMandatory" disabled="@_busy" @onchange="e => SetMandatoryAsync(l, e.Value is true)" />
+                                <span class="dc-muted">@(l.IsMandatory ? "Yes" : "No")</span>
+                            </label>
+                        </td>
+                        <td>
+                            <select class="dc-input dc-input-inline" value="@(l.FallbackIsoCode ?? string.Empty)" disabled="@_busy" @onchange="e => SetFallbackAsync(l, e.Value?.ToString())">
+                                <option value="">— None —</option>
+                                @foreach (var other in _languages.Where(o => o.Id != l.Id))
+                                {
+                                    <option value="@other.IsoCode" selected="@other.Is(l.FallbackIsoCode)">@other.Name</option>
+                                }
+                            </select>
+                        </td>
+                        <td class="dc-table-actions">
+                            @if (!l.IsDefault)
+                            {
+                                <button type="button" class="dc-btn dc-btn-sm dc-btn-danger-ghost" disabled="@_busy" @onclick="() => _confirmDelete = l"><Icon Name="trash" Size="14" /> Remove</button>
+                            }
+                        </td>
+                    </tr>
+                }
+                @if (_languages.Count == 0)
+                {
+                    <tr><td colspan="7" class="dc-muted">No languages yet. Add one below; the first one becomes the default.</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <section class="dc-card dc-mt">
+        <h3><Icon Name="plus" Size="16" /> Add a language</h3>
+        <div class="dc-lang-add">
+            <label class="dc-field">
+                <span class="dc-label">Culture</span>
+                <input class="dc-input" type="text" list="dc-culture-list" placeholder="Type to search, e.g. German or de-DE" @bind="_newCode" @bind:event="oninput" @onkeyup="OnKeyUp" />
+                <datalist id="dc-culture-list">
+                    @foreach (var c in _cultures)
+                    {
+                        <option value="@c.Name">@c.EnglishName</option>
+                    }
+                </datalist>
+                <small class="dc-muted">
+                    @if (_newDisplayName is not null)
+                    {
+                        <text>@_newDisplayName · served under <code>/@(_newCode.Trim().ToLowerInvariant())/</code></text>
+                    }
+                    else if (!string.IsNullOrWhiteSpace(_newCode))
+                    {
+                        <span class="dc-error">Not a known culture.</span>
+                    }
+                    else
+                    {
+                        <text>Any .NET culture name works: <code>en</code>, <code>en-GB</code>, <code>fr-CA</code>, <code>ja</code>…</text>
+                    }
+                </small>
+            </label>
+            <label class="dc-check">
+                <input type="checkbox" @bind="_newMandatory" /> <span>Mandatory (must be published before other languages)</span>
+            </label>
+            <button type="button" class="dc-btn dc-btn-primary" disabled="@(_newDisplayName is null || _busy)" @onclick="AddAsync"><Icon Name="plus" Size="14" /> Add language</button>
+        </div>
+    </section>
+</div>
+
+@if (_confirmDelete is { } doomed)
+{
+    <ConfirmDialog Title="Remove language"
+                   Message="@($"Remove {doomed.Name} ({doomed.IsoCode})? Every name and value stored in this language is deleted from all content. This cannot be undone.")"
+                   ConfirmText="Remove" Danger="true"
+                   OnConfirm="() => DeleteAsync(doomed)" OnCancel="() => _confirmDelete = null" />
+}
+
+@code {
+    private IReadOnlyList<Language> _languages = [];
+    private IReadOnlyList<CultureInfo> _cultures = [];
+    private string _newCode = string.Empty;
+    private bool _newMandatory;
+    private bool _busy;
+    private Language? _confirmDelete;
+
+    private string? _newDisplayName => Languages.DisplayNameOf(_newCode);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _cultures = CultureInfo.GetCultures(CultureTypes.AllCultures)
+            .Where(c => !string.IsNullOrEmpty(c.Name))
+            .OrderBy(c => c.EnglishName)
+            .ToList();
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync() => _languages = await Languages.GetAllAsync();
+
+    private Task OnKeyUp(KeyboardEventArgs e) => e.Key == "Enter" && _newDisplayName is not null ? AddAsync() : Task.CompletedTask;
+
+    private async Task AddAsync()
+    {
+        await RunAsync(async () =>
+        {
+            var saved = await Languages.SaveAsync(new Language { IsoCode = _newCode.Trim(), IsMandatory = _newMandatory });
+            Toasts.Success("Language added", $"{saved.Name} ({saved.IsoCode})");
+            _newCode = string.Empty;
+            _newMandatory = false;
+        });
+    }
+
+    private Task RenameAsync(Language l, string? name) =>
+        RunAsync(async () =>
+        {
+            if (string.IsNullOrWhiteSpace(name) || name.Trim() == l.Name) return;
+            l.Name = name.Trim();
+            await Languages.SaveAsync(l);
+        });
+
+    private Task SetDefaultAsync(Language l) =>
+        RunAsync(async () =>
+        {
+            await Languages.SetDefaultAsync(l.IsoCode);
+            Toasts.Success("Default language", $"{l.Name} is now served at /");
+        });
+
+    private Task SetMandatoryAsync(Language l, bool on) =>
+        RunAsync(async () =>
+        {
+            l.IsMandatory = on;
+            await Languages.SaveAsync(l);
+        });
+
+    private Task SetFallbackAsync(Language l, string? iso) =>
+        RunAsync(async () =>
+        {
+            l.FallbackIsoCode = string.IsNullOrEmpty(iso) ? null : iso;
+            await Languages.SaveAsync(l);
+        });
+
+    private async Task DeleteAsync(Language l)
+    {
+        _confirmDelete = null;
+        await RunAsync(async () =>
+        {
+            await Languages.DeleteAsync(l.IsoCode);
+            Toasts.Info("Language removed", $"{l.Name} ({l.IsoCode})");
+        });
+    }
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        _busy = true;
+        try
+        {
+            await action();
+        }
+        catch (InvalidOperationException ex)
+        {
+            Toasts.Error(ex, "Languages");
+        }
+        finally
+        {
+            _busy = false;
+            await ReloadAsync();
+        }
+    }
+}

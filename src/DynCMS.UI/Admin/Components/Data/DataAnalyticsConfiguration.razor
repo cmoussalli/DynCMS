@@ -1,0 +1,336 @@
+@namespace DynCMS.UI.Admin.Components
+@using DynCMS.Core.Data
+@inject IDatabaseMaintenanceService Maintenance
+@inject IDatabaseSetupService Setup
+@inject DatabaseConfigurationStore Store
+@inject ToastService Toasts
+@inject IAnalyticsService Analytics
+@using DynCMS.Core.Analytics
+
+<div class="dc-page dc-data-section">
+    <header class="dc-page-head">
+        <h1><Icon Name="bar-chart" Size="22" /> Analytics database</h1>
+        <p class="dc-muted">
+            Visitor analytics (page views and the geolocation cache) can live in its own database, of either engine, so the
+            history is kept apart from the content: backing up or restoring one never touches the other, and page views stop
+            competing with editors for the same file. The setting is stored in <code>@Store.FilePath</code> and applies
+            without a restart or a sign-out.
+        </p>
+    </header>
+
+    <section class="dc-card">
+        <div class="dc-card-head">
+            <h3><Icon Name="check-circle" Size="16" /> Currently in use</h3>
+            <span class="dc-badge @(_separate ? "dc-badge-info" : "dc-badge-muted")">@(_separate ? "Separate database" : "Shared with the primary database")</span>
+        </div>
+        @if (_current is { } current)
+        {
+            <dl class="dc-data-kv">
+                <dt>Engine</dt><dd>@(current.Provider == DatabaseProvider.SqlServer ? "SQL Server" : "SQLite")</dd>
+                @if (current.Provider == DatabaseProvider.Sqlite)
+                {
+                    <dt>Database file</dt><dd><code>@current.Sqlite?.ResolvePath(Store.BasePath)</code></dd>
+                }
+                else
+                {
+                    <dt>Server</dt><dd><code>@current.SqlServer?.Server,@current.SqlServer?.Port</code></dd>
+                    <dt>Database</dt><dd><code>@current.SqlServer?.Database</code></dd>
+                    <dt>User</dt><dd>@current.SqlServer?.UserName</dd>
+                }
+                <dt>Tables</dt><dd><code>AnalyticsPageViews</code>, <code>AnalyticsGeoIp</code>@(_separate ? "" : " — inside the primary database")</dd>
+            </dl>
+        }
+    </section>
+
+    @if (_leftover is { } leftover)
+    {
+        <section class="dc-card dc-data-leftover">
+            <div class="dc-card-head">
+                <h3><Icon Name="alert" Size="16" /> Old history in the primary database</h3>
+                <span class="dc-badge dc-badge-warn">@leftover.PageViews.ToString("N0") page views</span>
+            </div>
+            <p class="dc-muted">
+                Analytics runs in its own database, but the primary database still contains
+                <strong>@leftover.PageViews.ToString("N0") page views</strong> and @leftover.GeoEntries.ToString("N0") cached locations recorded before the split.
+                They are not part of the reports, they make content backups bigger, and nothing will remove them by itself.
+            </p>
+            <div class="dc-data-actions">
+                <button type="button" class="dc-btn dc-btn-primary" @onclick="() => _leftoverConfirm = AnalyticsHistoryAction.Move" disabled="@_busy">
+                    @if (_busy && _action == "leftover-move") { <span class="dc-spinner"></span> } else { <Icon Name="arrow-right" Size="14" /> }
+                    <span>Move them into the analytics database</span>
+                </button>
+                <button type="button" class="dc-btn dc-btn-danger-ghost" @onclick="() => _leftoverConfirm = AnalyticsHistoryAction.Delete" disabled="@_busy">
+                    @if (_busy && _action == "leftover-delete") { <span class="dc-spinner"></span> } else { <Icon Name="trash" Size="14" /> }
+                    <span>Delete them</span>
+                </button>
+            </div>
+        </section>
+    }
+
+    <section class="dc-card">
+        <h3><Icon Name="edit" Size="16" /> Where to keep analytics</h3>
+
+        <div class="dc-setup-options" style="margin-top:12px">
+            <button type="button" class="dc-setup-option @(!_wantSeparate ? "dc-active" : "")" @onclick="() => SetSeparate(false)" disabled="@_busy">
+                <Icon Name="database" Size="20" />
+                <strong>Same database as the content</strong>
+                <span>Simplest. One database, one backup. Fine for small and medium sites.</span>
+                @if (!_wantSeparate) { <Icon Name="check-circle" Size="16" Class="dc-setup-check" /> }
+            </button>
+            <button type="button" class="dc-setup-option @(_wantSeparate ? "dc-active" : "")" @onclick="() => SetSeparate(true)" disabled="@_busy">
+                <Icon Name="bar-chart" Size="20" />
+                <strong>A separate database</strong>
+                <span>Keeps the page view history out of content backups and restores; its own backups live under Analytics → Backups.</span>
+                @if (_wantSeparate) { <Icon Name="check-circle" Size="16" Class="dc-setup-check" /> }
+            </button>
+        </div>
+
+        @if (_wantSeparate)
+        {
+            <DatabaseConnectionFields Request="_request" Busy="_busy" IdPrefix="dc-analytics" OnChanged="ClearResult" />
+        }
+
+        @if (WillMove)
+        {
+            <span class="dc-label" style="margin-top:14px">Recorded history (@_currentViews.ToString("N0") page views)</span>
+            <div class="dc-setup-options">
+                <button type="button" class="dc-setup-option @(_history == AnalyticsHistoryAction.Move ? "dc-active" : "")" @onclick="() => _history = AnalyticsHistoryAction.Move" disabled="@_busy">
+                    <Icon Name="arrow-right" Size="20" />
+                    <strong>Move it to the new database</strong>
+                    <span>Page views and cached locations are copied across and removed from the old database. The reports continue unchanged.</span>
+                    @if (_history == AnalyticsHistoryAction.Move) { <Icon Name="check-circle" Size="16" Class="dc-setup-check" /> }
+                </button>
+                <button type="button" class="dc-setup-option @(_history == AnalyticsHistoryAction.Delete ? "dc-active" : "")" @onclick="() => _history = AnalyticsHistoryAction.Delete" disabled="@_busy">
+                    <Icon Name="trash" Size="20" />
+                    <strong>Delete it and start over</strong>
+                    <span>The old page views are removed for good. Keeps the databases small; the reports begin with the next visit.</span>
+                    @if (_history == AnalyticsHistoryAction.Delete) { <Icon Name="check-circle" Size="16" Class="dc-setup-check" /> }
+                </button>
+            </div>
+            @if (!_separate)
+            {
+                <p class="dc-muted" style="font-size:12.5px;margin:6px 0 0">Either way the two analytics tables are dropped from the primary database, so content backups stay lean.</p>
+            }
+        }
+
+        @if (_result is not null)
+        {
+            <div class="dc-setup-result @(_result.Success ? "dc-setup-result-ok" : "dc-setup-result-error")" role="status">
+                <strong><Icon Name="@(_result.Success ? "check-circle" : "alert")" Size="16" /> @_result.Message</strong>
+                @if (_result.Details.Count > 0)
+                {
+                    <ul>
+                        @foreach (var line in _result.Details) { <li>@line</li> }
+                    </ul>
+                }
+            </div>
+        }
+
+        <div class="dc-data-actions">
+            @if (_wantSeparate)
+            {
+                <button type="button" class="dc-btn" @onclick="TestAsync" disabled="@_busy">
+                    @if (_busy && _action == "test") { <span class="dc-spinner"></span> } else { <Icon Name="zap" Size="15" /> }
+                    <span>Test connection</span>
+                </button>
+            }
+            <button type="button" class="dc-btn dc-btn-primary" @onclick="() => _confirm = true" disabled="@(_busy || IsUnchanged)">
+                @if (_busy && _action == "switch") { <span class="dc-spinner"></span><span>Moving…</span> } else { <Icon Name="save" Size="15" /><span>Save and apply</span> }
+            </button>
+            <button type="button" class="dc-btn dc-btn-ghost" @onclick="ResetForm" disabled="@_busy"><Icon Name="rotate-ccw" Size="14" /> Reset form</button>
+        </div>
+    </section>
+</div>
+
+@if (_leftoverConfirm is { } leftoverAction)
+{
+    <ConfirmDialog Title="@(leftoverAction == AnalyticsHistoryAction.Move ? "Move the old history?" : "Delete the old history?")"
+                   Message="@(leftoverAction == AnalyticsHistoryAction.Move
+                       ? $"{_leftover?.PageViews:N0} page views are copied into the analytics database and the analytics tables are dropped from the primary database."
+                       : $"{_leftover?.PageViews:N0} page views are deleted for good and the analytics tables are dropped from the primary database.")"
+                   ConfirmText="@(leftoverAction == AnalyticsHistoryAction.Move ? "Move" : "Delete")"
+                   Danger="@(leftoverAction == AnalyticsHistoryAction.Delete)"
+                   OnConfirm="ResolveLeftoverAsync"
+                   OnCancel="() => _leftoverConfirm = null" />
+}
+
+@if (_confirm)
+{
+    <ConfirmDialog Title="@(_wantSeparate ? "Move analytics to a separate database?" : "Move analytics back into the primary database?")"
+                   Message="@ConfirmMessage"
+                   ConfirmText="Save and apply"
+                   Danger="false"
+                   OnConfirm="SwitchAsync"
+                   OnCancel="() => _confirm = false" />
+}
+
+@code {
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private DatabaseConfiguration? _current;
+    private bool _separate;
+    private bool _wantSeparate;
+    private AnalyticsHistoryAction _history = AnalyticsHistoryAction.Move;
+    private AnalyticsHistoryInfo? _leftover;
+    private AnalyticsHistoryAction? _leftoverConfirm;
+    private long _currentViews;
+    private DatabaseSetupRequest _request = new();
+    private DatabaseTestResult? _result;
+    private bool _busy;
+    private bool _confirm;
+    private string? _action;
+
+    /// <summary>The form describes a different store than the one in use.</summary>
+    private bool WillMove => _wantSeparate != _separate || (_wantSeparate && !DescribesCurrent);
+
+    private bool IsUnchanged => !WillMove;
+
+    private bool DescribesCurrent
+    {
+        get
+        {
+            if (_current is null || !_separate) return false;
+            try
+            {
+                return _request.ToConfiguration().SameTargetAs(_current, Store.BasePath);
+            }
+            catch (InvalidOperationException)
+            {
+                return false;
+            }
+        }
+    }
+
+    private string HistoryNote => _history == AnalyticsHistoryAction.Move
+        ? $" The {_currentViews:N0} recorded page views are moved across first."
+        : $" The {_currentViews:N0} recorded page views are deleted and the reports start over.";
+
+    private string ConfirmMessage => _wantSeparate
+        ? $"Page views will be recorded in {(_request.Provider == DatabaseProvider.Sqlite ? "the SQLite file " + _request.SqlitePath : $"database '{_request.Database}' on {_request.Server}")} from now on.{HistoryNote} Nobody is signed out."
+        : $"Page views will be recorded in the primary database again.{HistoryNote} Nobody is signed out.";
+
+    protected override async Task OnInitializedAsync()
+    {
+        ResetForm();
+        await LoadCountsAsync();
+    }
+
+    private async Task LoadCountsAsync()
+    {
+        try
+        {
+            _leftover = await Maintenance.GetLeftoverAnalyticsAsync();
+            if (_leftover is { IsEmpty: true }) _leftover = null;
+            var info = await Analytics.GetDataInfoAsync();
+            _currentViews = info.TotalViews;
+        }
+        catch
+        {
+            _leftover = null;
+        }
+    }
+
+    private void ResetForm()
+    {
+        var primary = Store.Current;
+        _separate = Store.IsAnalyticsSeparate;
+        _current = Store.Resolve(DatabaseRole.Analytics);
+        _wantSeparate = _separate;
+        _history = AnalyticsHistoryAction.Move;
+        _request = new DatabaseSetupRequest { Mode = _separate ? DatabaseSetupMode.ExistingDatabase : DatabaseSetupMode.NewDatabase };
+
+        var seed = _separate ? _current : primary;
+        if (seed is null) return;
+        _request.Provider = seed.Provider;
+        if (seed.Sqlite is { } sqlite)
+        {
+            _request.SqlitePath = _separate
+                ? sqlite.DatabasePath
+                : Path.Combine(Path.GetDirectoryName(sqlite.DatabasePath) ?? "App_Data", Path.GetFileNameWithoutExtension(sqlite.DatabasePath) + "-analytics.db");
+        }
+        if (seed.SqlServer is { } sql)
+        {
+            _request.Server = sql.Server;
+            _request.Port = sql.Port;
+            _request.Database = _separate ? sql.Database : sql.Database + "_Analytics";
+            _request.UserName = sql.UserName;
+            _request.Password = sql.Password;
+            _request.TrustServerCertificate = sql.TrustServerCertificate;
+        }
+        ClearResult();
+    }
+
+    private void SetSeparate(bool separate) { _wantSeparate = separate; ClearResult(); }
+    private void ClearResult() => _result = null;
+
+    private async Task TestAsync()
+    {
+        if (_busy) return;
+        _busy = true;
+        _action = "test";
+        try
+        {
+            _result = await Setup.TestConnectionAsync(_request, DatabaseRole.Analytics);
+        }
+        finally
+        {
+            _busy = false;
+            _action = null;
+        }
+    }
+
+    private async Task ResolveLeftoverAsync()
+    {
+        if (_busy || _leftoverConfirm is not { } action) return;
+        _leftoverConfirm = null;
+        _busy = true;
+        _action = action == AnalyticsHistoryAction.Move ? "leftover-move" : "leftover-delete";
+        try
+        {
+            var result = await Maintenance.ResolveLeftoverAnalyticsAsync(action);
+            Toasts.Success(action == AnalyticsHistoryAction.Move ? "Old history moved" : "Old history deleted",
+                action == AnalyticsHistoryAction.Move ? $"{result?.PageViewsCopied ?? 0:N0} page views are now in the analytics database." : "The primary database no longer holds analytics tables.");
+            await LoadCountsAsync();
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex, "Could not handle the old history");
+        }
+        finally
+        {
+            _busy = false;
+            _action = null;
+        }
+    }
+
+    private async Task SwitchAsync()
+    {
+        _confirm = false;
+        if (_busy) return;
+        _busy = true;
+        _action = "switch";
+        try
+        {
+            _result = await Maintenance.SwitchAnalyticsConfigurationAsync(_wantSeparate ? _request : null, _history);
+            if (_result.Success)
+            {
+                Toasts.Success("Analytics database updated", _result.Message);
+                var keep = _result;
+                ResetForm();
+                _result = keep;
+                await LoadCountsAsync();
+                await OnChanged.InvokeAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            _result = DatabaseTestResult.Fail("Switching the analytics database failed.", ex.Message);
+        }
+        finally
+        {
+            _busy = false;
+            _action = null;
+        }
+    }
+}

@@ -1,0 +1,118 @@
+@namespace DynCMS.UI.Admin.Components.Analytics
+@using DynCMS.Core.Analytics
+@inject IAnalyticsService Analytics
+
+<div class="dc-an-view">
+    @if (_error is not null)
+    {
+        <div class="dc-alert dc-alert-error"><Icon Name="alert" Size="15" /> <span>@_error</span></div>
+    }
+    else if (_loading && _referrers.Count == 0)
+    {
+        <div class="dc-loading"><span class="dc-spinner"></span> Loading sources…</div>
+    }
+    else
+    {
+        <div class="dc-stats dc-an-stats">
+            @foreach (var (channel, views, visitors) in _channels)
+            {
+                <div class="dc-stat @TintFor(channel)" title="@Describe(channel)">
+                    <span class="dc-stat-tile"><Icon Name="@AnalyticsFormat.ChannelIcon(channel)" Size="20" /></span>
+                    <strong>@AnalyticsFormat.Number(views)</strong>
+                    <span>@channel <small class="dc-muted">· @AnalyticsFormat.Share(views, _entrances) · @AnalyticsFormat.Number(visitors) visitors</small></span>
+                </div>
+            }
+        </div>
+
+        <div class="dc-an-grid">
+            <section class="dc-card">
+                <div class="dc-card-head">
+                    <h3><Icon Name="link" Size="16" /> Referring sites</h3>
+                    <span class="dc-muted">Page views that arrived from another site</span>
+                </div>
+                <AnalyticsBarList Items="_referrerItems" Heading="Site" ShowVisitors="true" ShowShare="true" Total="_entrances" EmptyText="No referrers yet. Views that arrive by typing the address, from bookmarks or from apps count as direct." EmptyIcon="link" />
+            </section>
+
+            <section class="dc-card">
+                <div class="dc-card-head">
+                    <h3><Icon Name="globe" Size="16" /> Domains</h3>
+                    <span class="dc-muted">Hosts the site was requested under</span>
+                </div>
+                <AnalyticsBarList Items="_hostItems" Heading="Host" ShowVisitors="true" ShowShare="true" />
+                <div class="dc-an-sub">
+                    <div class="dc-card-head" style="margin-top:14px"><h3><Icon Name="type" Size="16" /> Visitor languages</h3></div>
+                    <AnalyticsBarList Items="_languageItems" Heading="Language" ShowShare="true" />
+                </div>
+            </section>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public AnalyticsRange Range { get; set; } = AnalyticsRange.LastDays(30);
+
+    private AnalyticsRange? _loaded;
+    private IReadOnlyList<AnalyticsReferrerStat> _referrers = [];
+    private IReadOnlyList<AnalyticsBarItem> _referrerItems = [], _hostItems = [], _languageItems = [];
+    private List<(string Channel, long Views, long Visitors)> _channels = [];
+    private long _entrances;
+    private bool _loading;
+    private string? _error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loaded == Range) return;
+        _loaded = Range;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            var range = Range;
+            var referrers = await Analytics.GetReferrersAsync(range, 200);
+            var hosts = await Analytics.GetHostsAsync(range, 20);
+            var languages = await Analytics.GetLanguagesAsync(range, 12);
+
+            _referrers = referrers;
+            // Entrances: views that did not come from another page of the site.
+            _entrances = referrers.Where(r => r.Channel != ReferrerChannels.Internal).Sum(r => r.PageViews);
+            _channels = new[] { ReferrerChannels.Direct, ReferrerChannels.Search, ReferrerChannels.Social, ReferrerChannels.Referral }
+                .Select(c => (c, referrers.Where(r => r.Channel == c).Sum(r => r.PageViews), referrers.Where(r => r.Channel == c).Sum(r => r.Visitors)))
+                .ToList();
+            _referrerItems = referrers
+                .Where(r => r.Host is not null && r.Channel != ReferrerChannels.Internal)
+                .Select(r => new AnalyticsBarItem(r.Host!, r.PageViews, r.Visitors, Icon: AnalyticsFormat.ChannelIcon(r.Channel), Badge: r.Channel, BadgeClass: AnalyticsFormat.ChannelClass(r.Channel), Href: "https://" + r.Host))
+                .ToList();
+            _hostItems = hosts.Select(h => new AnalyticsBarItem(string.IsNullOrEmpty(h.Key) ? "(unknown host)" : h.Key, h.PageViews, h.Visitors, Icon: "globe")).ToList();
+            _languageItems = languages.Select(l => new AnalyticsBarItem(AnalyticsFormat.LanguageName(l.Key), l.PageViews, l.Visitors, Detail: l.Key, Icon: "type")).ToList();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static string TintFor(string channel) => channel switch
+    {
+        ReferrerChannels.Search => "dc-stat-green",
+        ReferrerChannels.Social => "dc-stat-violet",
+        ReferrerChannels.Referral => "dc-stat-teal",
+        _ => "dc-stat-amber"
+    };
+
+    private static string Describe(string channel) => channel switch
+    {
+        ReferrerChannels.Search => "Arrived from a search engine",
+        ReferrerChannels.Social => "Arrived from a social network",
+        ReferrerChannels.Referral => "Arrived from a link on another site",
+        _ => "No referrer: typed address, bookmark, app or a browser that hides it"
+    };
+}

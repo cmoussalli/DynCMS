@@ -1,0 +1,340 @@
+@namespace DynCMS.UI.Admin.Components
+@using Microsoft.Extensions.Options
+@implements IDisposable
+@inject IPluginManager Plugins
+@inject IOptions<DynCmsOptions> Options
+@inject ToastService Toasts
+
+<div class="dc-page dc-page-wide dc-plugins">
+    <header class="dc-page-head dc-page-head-row">
+        <div>
+            <h1><Icon Name="box" Size="22" /> Plugins</h1>
+            <p class="dc-muted">
+                Plugins are Razor class libraries that extend this site without a redeploy: back-office pages and navigation,
+                site pages, services, API endpoints and their own data folder. Upload one here, or copy it into the plugin folder.
+                Stop a plugin to take everything it adds offline; start it again at any time.
+            </p>
+        </div>
+        <div class="dc-inline">
+            <button type="button" class="dc-btn" @onclick="RescanAsync" disabled="@(_busy is not null || !Plugins.IsEnabled)" title="Pick up folders copied into the plugin folder"><Icon Name="refresh" Size="14" /> Rescan folder</button>
+        </div>
+    </header>
+
+    <AuthorizeView Roles="@CmsRoles.Admin">
+        <NotAuthorized>
+            <div class="dc-alert dc-alert-warn"><Icon Name="lock" Size="15" /> <span>Only administrators manage plugins.</span></div>
+        </NotAuthorized>
+        <Authorized>
+            @if (!Plugins.IsEnabled)
+            {
+                <div class="dc-alert dc-alert-warn"><Icon Name="alert" Size="15" /> <span>Plugins are turned off in configuration (<code>DynCms:Plugins:Enabled</code>). Nothing in <code>@Plugins.RootPath</code> is loaded.</span></div>
+            }
+            else
+            {
+                @if (!Plugins.ServiceProviderAttached)
+                {
+                    <div class="dc-alert dc-alert-info"><Icon Name="info" Size="15" /> <span>The plugin-aware service provider is not installed, so plugin services cannot be injected with <code>@@inject</code>; plugins reach them through <code>IPluginContext.Services</code>. <code>AddDynCmsHost</code> installs it unless <code>PluginServiceProvider</code> is turned off.</span></div>
+                }
+
+                <div class="dc-stats">
+                    <div class="dc-stat"><span class="dc-stat-tile"><Icon Name="box" Size="20" /></span><strong>@Plugins.Plugins.Count</strong><span>Installed</span></div>
+                    <div class="dc-stat dc-stat-green"><span class="dc-stat-tile"><Icon Name="check-circle" Size="20" /></span><strong>@Plugins.Plugins.Count(p => p.IsRunning)</strong><span>Running</span></div>
+                    <div class="dc-stat dc-stat-violet"><span class="dc-stat-tile"><Icon Name="layout" Size="20" /></span><strong>@Plugins.Plugins.Where(p => p.IsRunning).Sum(p => p.Pages.Count)</strong><span>Pages</span></div>
+                    <div class="dc-stat dc-stat-teal"><span class="dc-stat-tile"><Icon Name="zap" Size="20" /></span><strong>@Plugins.Plugins.Where(p => p.IsRunning).Sum(p => p.EndpointCount)</strong><span>Endpoints</span></div>
+                    @if (Plugins.Plugins.Any(p => p.Status == PluginStatus.Failed))
+                    {
+                        <div class="dc-stat dc-stat-amber"><span class="dc-stat-tile"><Icon Name="alert" Size="20" /></span><strong>@Plugins.Plugins.Count(p => p.Status == PluginStatus.Failed)</strong><span>Failed</span></div>
+                    }
+                </div>
+
+                <div class="dc-dash-grid dc-plugins-grid">
+                    <div class="dc-dash-col">
+                        @if (Plugins.Plugins.Count == 0)
+                        {
+                            <div class="dc-card dc-empty-card">
+                                <span class="dc-empty-tile"><Icon Name="box" Size="28" /></span>
+                                <h3>No plugins installed</h3>
+                                <p class="dc-muted">Upload a plugin package on the right, or copy a plugin folder into <code>@Plugins.RootPath</code> and click <em>Rescan folder</em>.</p>
+                            </div>
+                        }
+
+                        @foreach (var p in Plugins.Plugins)
+                        {
+                            <section class="dc-card dc-plugin-card @(p.Status == PluginStatus.Failed ? "dc-plugin-failed" : null)" @key="p.Id">
+                                <div class="dc-card-head dc-plugin-head">
+                                    <div class="dc-plugin-title">
+                                        <span class="dc-plugin-icon"><Icon Name="@p.Icon" Size="20" /></span>
+                                        <div>
+                                            <h3>@p.Name <small class="dc-muted">@p.Version</small></h3>
+                                            <div class="dc-plugin-meta">
+                                                <code>@p.Id</code>
+                                                @if (!string.IsNullOrWhiteSpace(p.Author))
+                                                {
+                                                    <span>· by @p.Author</span>
+                                                }
+                                                @if (!string.IsNullOrWhiteSpace(p.MinimumCmsVersion))
+                                                {
+                                                    <span>· needs DynCMS @p.MinimumCmsVersion+</span>
+                                                }
+                                                @if (p.InstalledAt is { } installed)
+                                                {
+                                                    <span>· installed @installed.ToLocalTime().ToString("g", CultureInfo.CurrentCulture)</span>
+                                                }
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="dc-plugin-status">
+                                        @switch (p.Status)
+                                        {
+                                            case PluginStatus.Running:
+                                                <span class="dc-badge dc-badge-success">Running</span>
+                                                break;
+                                            case PluginStatus.Failed:
+                                                <span class="dc-badge dc-badge-warn">Failed</span>
+                                                break;
+                                            default:
+                                                <span class="dc-badge dc-badge-muted">Stopped</span>
+                                                break;
+                                        }
+                                    </div>
+                                </div>
+
+                                @if (!string.IsNullOrWhiteSpace(p.Description))
+                                {
+                                    <p class="dc-plugin-description">@p.Description</p>
+                                }
+
+                                @if (p.Status == PluginStatus.Failed && p.Error is not null)
+                                {
+                                    <div class="dc-alert dc-alert-error"><Icon Name="alert" Size="15" /> <span>@p.Error</span></div>
+                                }
+
+                                @if (p.IsRunning)
+                                {
+                                    <div class="dc-plugin-facts">
+                                        @if (p.Pages.Any(x => x.IsAdmin))
+                                        {
+                                            <div class="dc-plugin-fact">
+                                                <span class="dc-plugin-fact-label"><Icon Name="shield" Size="13" /> Back office</span>
+                                                <span class="dc-plugin-fact-value">
+                                                    @foreach (var pg in p.Pages.Where(x => x.IsAdmin))
+                                                    {
+                                                        <a class="dc-badge dc-badge-info" href="@LinkFor(pg.Template)" title="@pg.ComponentType.Name" @key="pg">@pg.Template</a>
+                                                    }
+                                                </span>
+                                            </div>
+                                        }
+                                        @if (p.Pages.Any(x => !x.IsAdmin))
+                                        {
+                                            <div class="dc-plugin-fact">
+                                                <span class="dc-plugin-fact-label"><Icon Name="globe" Size="13" /> Site</span>
+                                                <span class="dc-plugin-fact-value">
+                                                    @foreach (var pg in p.Pages.Where(x => !x.IsAdmin))
+                                                    {
+                                                        <a class="dc-badge dc-badge-info" href="@LinkFor(pg.Template)" target="_blank" rel="noopener" title="@pg.ComponentType.Name" @key="pg">@pg.Template</a>
+                                                    }
+                                                </span>
+                                            </div>
+                                        }
+                                        @if (p.MenuItems.Count > 0)
+                                        {
+                                            <div class="dc-plugin-fact">
+                                                <span class="dc-plugin-fact-label"><Icon Name="menu" Size="13" /> Navigation</span>
+                                                <span class="dc-plugin-fact-value">@string.Join(", ", p.MenuItems.Select(m => $"{m.Title} ({(m.Placement == PluginMenuPlacement.Main ? "top bar" : "settings")})"))</span>
+                                            </div>
+                                        }
+                                        <div class="dc-plugin-fact">
+                                            <span class="dc-plugin-fact-label"><Icon Name="zap" Size="13" /> Provides</span>
+                                            <span class="dc-plugin-fact-value">
+                                                @p.EndpointCount endpoint(s), @p.ServiceCount service(s)@(p.HasControllers ? ", API controllers" : null)@(p.HasStaticAssets ? $", static files at {StaticPath(p.Id)}/" : null)
+                                            </span>
+                                        </div>
+                                    </div>
+                                }
+
+                                <div class="dc-plugin-fact dc-plugin-data">
+                                    <span class="dc-plugin-fact-label"><Icon Name="hard-drive" Size="13" /> Data folder</span>
+                                    <span class="dc-plugin-fact-value"><code>@p.DataDirectory</code> <small class="dc-muted">(@FormatBytes(p.DataSizeBytes))</small></span>
+                                </div>
+
+                                <div class="dc-plugin-actions">
+                                    @if (p.IsRunning)
+                                    {
+                                        <button type="button" class="dc-btn" @onclick="() => StopAsync(p)" disabled="@(_busy is not null)"><Icon Name="circle" Size="14" /> Stop</button>
+                                    }
+                                    else
+                                    {
+                                        <button type="button" class="dc-btn dc-btn-primary" @onclick="() => StartAsync(p)" disabled="@(_busy is not null)"><Icon Name="publish" Size="14" /> Start</button>
+                                    }
+                                    <button type="button" class="dc-btn" @onclick="() => ReloadAsync(p)" disabled="@(_busy is not null)" title="Load the assemblies in the plugin folder again"><Icon Name="rotate-ccw" Size="14" /> Reload</button>
+                                    <span class="dc-grow"></span>
+                                    <button type="button" class="dc-btn dc-btn-danger-ghost" @onclick="() => AskUninstall(p)" disabled="@(_busy is not null)"><Icon Name="trash" Size="14" /> Uninstall</button>
+                                    @if (_busy == p.Id)
+                                    {
+                                        <span class="dc-spinner"></span>
+                                    }
+                                </div>
+                            </section>
+                        }
+                    </div>
+
+                    <div class="dc-dash-col">
+                        <section class="dc-card">
+                            <div class="dc-card-head"><h3><Icon Name="upload" Size="16" /> Install a plugin</h3></div>
+                            @if (!Plugins.AllowUpload)
+                            {
+                                <p class="dc-muted">Upload is turned off (<code>DynCms:Plugins:AllowUpload</code>). Copy the plugin into <code>@Plugins.RootPath</code> and click <em>Rescan folder</em>.</p>
+                            }
+                            else
+                            {
+                                <p class="dc-muted">A single <code>.dll</code>, or a <code>.zip</code> with the assemblies and an optional <code>wwwroot</code> folder. The plugin starts right away. Uploading a plugin with the same id updates it and keeps its data.</p>
+                                <p class="dc-muted">This site runs <strong>DynCMS @CmsVersion.Application</strong>. A plugin that needs a newer version (or declares none) is rejected; update DynCMS first.</p>
+                                <label class="dc-upload dc-plugin-upload">
+                                    <InputFile OnChange="UploadAsync" accept=".dll,.zip" disabled="@(_busy is not null)" />
+                                    <span><Icon Name="upload" Size="16" /> @(_busy == "upload" ? "Installing…" : "Choose a .dll or .zip")</span>
+                                </label>
+                                <p class="dc-muted dc-plugin-warning"><Icon Name="alert" Size="13" /> A plugin runs with the rights of this application. Install only code you trust.</p>
+                            }
+                        </section>
+
+                        <section class="dc-card">
+                            <div class="dc-card-head"><h3><Icon Name="code" Size="16" /> Build one</h3></div>
+                            <ol class="dc-plugin-steps">
+                                <li>Create a <strong>Razor class library</strong> (net10.0) and reference <code>DynCMS.Core</code> and <code>DynCMS.UI</code> with <code>Private="false"</code>. Declare the oldest DynCMS you support with <code>[assembly: DynCmsMinimumVersion("0.1.0")]</code>; it is required.</li>
+                                <li>Add one class deriving from <code>DynCmsPlugin</code>: register services in <code>ConfigureServices</code>, map endpoints in <code>MapEndpoints</code>, create your database in <code>StartAsync</code> under <code>context.DataDirectory</code>.</li>
+                                <li>Add pages with <code>@@page</code>: routes under <code>/admin/…</code> render in the back office, others on the site. Return links from <code>MenuItems</code>.</li>
+                                <li>Zip the build output (plus <code>wwwroot</code>) and upload it, or copy it to <code>@Plugins.RootPath\{id}\bin</code>.</li>
+                            </ol>
+                            <p class="dc-muted">The developer guide has a complete walkthrough and the <em>Guestbook</em> sample plugin.</p>
+                        </section>
+
+                        <section class="dc-card">
+                            <div class="dc-card-head"><h3><Icon Name="folder" Size="16" /> Folder layout</h3></div>
+                            <pre class="dc-snippet"><code>@Plugins.RootPath\
+  plugins.json          enabled state
+  {id}\
+    bin\                assemblies (shadow-copied on load)
+    wwwroot\            served at @StaticPath("{id}")/
+    settings.json       optional configuration
+    data\               the plugin's private files</code></pre>
+                        </section>
+                    </div>
+                </div>
+            }
+        </Authorized>
+    </AuthorizeView>
+</div>
+
+@if (_uninstall is { } target)
+{
+    <Modal Title="@($"Uninstall {target.Name}?")" Size="Modal.ModalSize.Small" OnClose="() => _uninstall = null">
+        <ChildContent>
+            <p class="dc-confirm-text">The plugin is stopped and its binaries are removed from <code>@target.Directory</code>.</p>
+            <label class="dc-check">
+                <input type="checkbox" @bind="_deleteData" />
+                <span>Also delete its data folder (@FormatBytes(target.DataSizeBytes)). This cannot be undone.</span>
+            </label>
+        </ChildContent>
+        <Footer>
+            <button type="button" class="dc-btn" @onclick="() => _uninstall = null">Cancel</button>
+            <button type="button" class="dc-btn dc-btn-danger" @onclick="UninstallAsync" disabled="@(_busy is not null)"><Icon Name="trash" Size="14" /> Uninstall</button>
+        </Footer>
+    </Modal>
+}
+
+@code {
+    private string? _busy;
+    private PluginInfo? _uninstall;
+    private bool _deleteData;
+
+    protected override void OnInitialized() => Plugins.Changed += OnChanged;
+
+    private void OnChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private string StaticPath(string id) => "/" + Options.Value.Plugins.StaticAssetsRequestPath.Trim('/') + "/" + id;
+
+    private static string LinkFor(string template)
+    {
+        var index = template.IndexOf('{');
+        return (index < 0 ? template : template[..index]).TrimEnd('/') is { Length: > 0 } link ? link : "/";
+    }
+
+    private static string FormatBytes(long bytes) => bytes switch
+    {
+        < 1024 => $"{bytes} B",
+        < 1024 * 1024 => $"{bytes / 1024.0:0.#} KB",
+        < 1024L * 1024 * 1024 => $"{bytes / 1024.0 / 1024:0.#} MB",
+        _ => $"{bytes / 1024.0 / 1024 / 1024:0.##} GB"
+    };
+
+    private async Task StartAsync(PluginInfo p) => await RunAsync(p.Id, async () =>
+    {
+        var info = await Plugins.StartAsync(p.Id);
+        Toasts.Success($"{info.Name} started", info.Pages.Count > 0 ? $"{info.Pages.Count} page(s), {info.EndpointCount} endpoint(s)" : null);
+    });
+
+    private async Task StopAsync(PluginInfo p) => await RunAsync(p.Id, async () =>
+    {
+        var info = await Plugins.StopAsync(p.Id);
+        Toasts.Info($"{info.Name} stopped", "Its pages, endpoints and menu items are offline until it is started again.");
+    });
+
+    private async Task ReloadAsync(PluginInfo p) => await RunAsync(p.Id, async () =>
+    {
+        var info = await Plugins.ReloadAsync(p.Id);
+        Toasts.Success($"{info.Name} reloaded", $"Version {info.Version}");
+    });
+
+    private async Task RescanAsync() => await RunAsync("rescan", async () =>
+    {
+        var before = Plugins.Plugins.Count;
+        await Plugins.RescanAsync();
+        var added = Plugins.Plugins.Count - before;
+        Toasts.Info(added > 0 ? $"{added} new plugin(s) found" : "No new plugins", $"Scanned {Plugins.RootPath}");
+    });
+
+    private async Task UploadAsync(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        await RunAsync("upload", async () =>
+        {
+            await using var stream = file.OpenReadStream(Options.Value.Plugins.MaxPackageBytes);
+            var info = await Plugins.InstallAsync(stream, file.Name);
+            if (info.Status == PluginStatus.Failed) Toasts.Error($"{info.Name} installed but failed to start", info.Error);
+            else Toasts.Success($"{info.Name} {info.Version} installed and running", info.Pages.Count > 0 ? $"{info.Pages.Count} page(s), {info.EndpointCount} endpoint(s)" : null);
+        });
+    }
+
+    private void AskUninstall(PluginInfo p)
+    {
+        _deleteData = false;
+        _uninstall = p;
+    }
+
+    private async Task UninstallAsync()
+    {
+        if (_uninstall is not { } target) return;
+        _uninstall = null;
+        await RunAsync(target.Id, async () =>
+        {
+            await Plugins.UninstallAsync(target.Id, _deleteData);
+            Toasts.Info($"{target.Name} uninstalled", _deleteData ? "Its data folder was deleted." : "Its data folder was kept.");
+        });
+    }
+
+    private async Task RunAsync(string key, Func<Task> action)
+    {
+        if (_busy is not null) return;
+        _busy = key;
+        StateHasChanged();
+        try { await action(); }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException) { Toasts.Error(ex); }
+        finally
+        {
+            _busy = null;
+            StateHasChanged();
+        }
+    }
+
+    public void Dispose() => Plugins.Changed -= OnChanged;
+}

@@ -1,0 +1,79 @@
+@namespace DynCMS.UI.Rendering
+@using DynCMS.Core.Plugins
+@implements IDisposable
+@inject IPluginRouter Router
+
+@*
+    Mounts the page of a running plugin for a request path. The host pages (the back office's /admin/{**rest} and the
+    site's catch-all) render this with the path; when no plugin page matches, the child content renders instead
+    (the site's content renderer, or a "not found" panel).
+
+    The plugin component itself is only created once the circuit is interactive (OnAfterRender never runs during
+    prerendering): plugin services live in the plugin-aware scope of the circuit, and the static prerender pass has
+    no such scope. Until then a small placeholder is shown.
+*@
+
+@if (_match is null)
+{
+    @ChildContent
+}
+else if (!_interactive)
+{
+    <div class="dc-plugin-loading" aria-busy="true"><span class="dc-spinner"></span></div>
+}
+else if (_match.Page.Layout is { } layout)
+{
+    <LayoutView Layout="layout">
+        <DynamicComponent Type="_match.Page.ComponentType" Parameters="_parameters" @key="_match.Page.ComponentType" />
+    </LayoutView>
+}
+else
+{
+    <DynamicComponent Type="_match.Page.ComponentType" Parameters="_parameters" @key="_match.Page.ComponentType" />
+}
+
+@code {
+    /// <summary>Absolute request path without query string, e.g. <c>/admin/shop/orders/3</c>.</summary>
+    [Parameter, EditorRequired] public string Path { get; set; } = "/";
+
+    /// <summary>Match back-office pages (<c>/admin/…</c>) or site pages.</summary>
+    [Parameter] public bool Admin { get; set; }
+
+    /// <summary>What to render when no plugin page matches the path.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>True when a plugin page matched the current path.</summary>
+    public bool Matched => _match is not null;
+
+    private PluginPageMatch? _match;
+    private Dictionary<string, object?> _parameters = [];
+    private bool _interactive;
+
+    protected override void OnInitialized() => Router.Changed += OnRoutesChanged;
+
+    protected override void OnParametersSet() => Resolve();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _interactive = true;
+            StateHasChanged();
+        }
+    }
+
+    private void Resolve()
+    {
+        var path = Path.Split('?')[0];
+        _match = Router.Match(path, Admin);
+        _parameters = _match?.ComponentParameters() ?? [];
+    }
+
+    private void OnRoutesChanged() => _ = InvokeAsync(() =>
+    {
+        Resolve();
+        StateHasChanged();
+    });
+
+    public void Dispose() => Router.Changed -= OnRoutesChanged;
+}

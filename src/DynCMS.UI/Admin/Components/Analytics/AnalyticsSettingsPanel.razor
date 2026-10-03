@@ -1,0 +1,253 @@
+@namespace DynCMS.UI.Admin.Components.Analytics
+@using DynCMS.Core.Analytics
+@inject IAnalyticsSettingsService Settings
+@inject IAnalyticsService Analytics
+@inject ToastService Toasts
+
+<div class="dc-an-view dc-an-settings">
+    <section class="dc-card">
+        <div class="dc-card-head">
+            <h3><Icon Name="sliders" Size="16" /> Tracking</h3>
+            @if (!Settings.IsCustomized) { <span class="dc-badge dc-badge-muted" title="No settings saved yet: the values from appsettings.json apply">Defaults</span> }
+        </div>
+
+        <label class="dc-toggle dc-an-toggle">
+            <input type="checkbox" @bind="_s.Enabled" />
+            <span class="dc-toggle-track"><span class="dc-toggle-thumb"></span></span>
+            <span class="dc-an-toggle-text"><strong>Record page views</strong><small>Turn off to stop collecting. Existing data stays.</small></span>
+        </label>
+        <label class="dc-toggle dc-an-toggle">
+            <input type="checkbox" @bind="_s.TrackSignedInUsers" />
+            <span class="dc-toggle-track"><span class="dc-toggle-thumb"></span></span>
+            <span class="dc-an-toggle-text"><strong>Include signed-in back-office users</strong><small>Off by default so editors browsing their own site do not inflate the numbers.</small></span>
+        </label>
+        <label class="dc-toggle dc-an-toggle">
+            <input type="checkbox" @bind="_s.TrackBots" />
+            <span class="dc-toggle-track"><span class="dc-toggle-thumb"></span></span>
+            <span class="dc-an-toggle-text"><strong>Store crawler and script traffic</strong><small>Bots are flagged and kept out of the reports either way; storing them lets you inspect them in the log.</small></span>
+        </label>
+
+        <label class="dc-field">
+            <span class="dc-label">Excluded paths</span>
+            <textarea class="dc-input" rows="3" @bind="_excluded" placeholder="/health"></textarea>
+            <small class="dc-muted">One per line. End with <code>*</code> to exclude everything under a prefix.</small>
+        </label>
+    </section>
+
+    <section class="dc-card">
+        <div class="dc-card-head"><h3><Icon Name="shield" Size="16" /> Privacy</h3></div>
+
+        <label class="dc-toggle dc-an-toggle">
+            <input type="checkbox" @bind="_s.StoreIpAddress" />
+            <span class="dc-toggle-track"><span class="dc-toggle-thumb"></span></span>
+            <span class="dc-an-toggle-text"><strong>Store IP addresses</strong><small>Shown in the visitor log. The pseudonymous visitor id is a keyed hash and is kept regardless.</small></span>
+        </label>
+        <label class="dc-toggle dc-an-toggle">
+            <input type="checkbox" @bind="_s.AnonymizeIp" disabled="@(!_s.StoreIpAddress)" />
+            <span class="dc-toggle-track"><span class="dc-toggle-thumb"></span></span>
+            <span class="dc-an-toggle-text"><strong>Anonymise IP addresses</strong><small>Zero the last octet (IPv4) or the last 80 bits (IPv6) before storing, like Google Analytics' IP anonymisation. Geolocation still uses the full address.</small></span>
+        </label>
+        <label class="dc-toggle dc-an-toggle">
+            <input type="checkbox" @bind="_s.TrustProxyHeaders" />
+            <span class="dc-toggle-track"><span class="dc-toggle-thumb"></span></span>
+            <span class="dc-an-toggle-text"><strong>Trust proxy headers</strong><small>Read the client address from <code>X-Forwarded-For</code>, <code>CF-Connecting-IP</code> or <code>X-Real-IP</code>. Needed behind a reverse proxy or CDN; otherwise every visit comes from the proxy.</small></span>
+        </label>
+
+        <label class="dc-field dc-an-field-narrow">
+            <span class="dc-label">Keep page views for</span>
+            <span class="dc-inline"><input class="dc-input dc-input-narrow" type="number" min="0" max="36500" @bind="_s.RetentionDays" style="max-width:120px" /> <span class="dc-muted">days · 0 keeps them forever</span></span>
+        </label>
+    </section>
+
+    <section class="dc-card">
+        <div class="dc-card-head"><h3><Icon Name="map-pin" Size="16" /> Geolocation</h3></div>
+        <label class="dc-toggle dc-an-toggle">
+            <input type="checkbox" @bind="_s.GeoLookupEnabled" />
+            <span class="dc-toggle-track"><span class="dc-toggle-thumb"></span></span>
+            <span class="dc-an-toggle-text"><strong>Look up visitor locations</strong><small>Country, region, city and coordinates for the map, resolved in the background and cached per address.</small></span>
+        </label>
+        <label class="dc-field">
+            <span class="dc-label">Lookup service</span>
+            <input class="dc-input" type="text" @bind="_s.GeoLookupUrl" disabled="@(!_s.GeoLookupEnabled)" placeholder="https://get.geojs.io/v1/ip/geo/{ip}.json" />
+            <small class="dc-muted">
+                <code>{ip}</code> is replaced by the address; the JSON answer is read for the usual field names, so
+                <code>https://get.geojs.io/v1/ip/geo/{ip}.json</code>, <code>http://ip-api.com/json/{ip}</code>, <code>https://ipapi.co/{ip}/json/</code> or
+                <code>https://ipwho.is/{ip}</code> all work. Visitor addresses are sent to this service; check its terms and rate limits. Private addresses are never sent.
+            </small>
+        </label>
+    </section>
+
+    <div class="dc-an-actions">
+        <button type="button" class="dc-btn dc-btn-primary" @onclick="SaveAsync" disabled="@_busy">
+            @if (_busy) { <span class="dc-spinner"></span> } else { <Icon Name="save" Size="14" /> }
+            <span>Save settings</span>
+        </button>
+        <button type="button" class="dc-btn" @onclick="ResetAsync" disabled="@(_busy || !Settings.IsCustomized)" title="Go back to the values from appsettings.json"><Icon Name="rotate-ccw" Size="14" /> Reset to defaults</button>
+    </div>
+
+    <section class="dc-card">
+        <div class="dc-card-head">
+            <h3><Icon Name="database" Size="16" /> Data</h3>
+            <button type="button" class="dc-btn dc-btn-sm" @onclick="LoadInfoAsync" title="Refresh"><Icon Name="refresh" Size="13" /></button>
+        </div>
+        @if (_info is null)
+        {
+            <div class="dc-loading"><span class="dc-spinner"></span> Counting…</div>
+        }
+        else
+        {
+            <dl class="dc-data-kv">
+                <dt>Page views stored</dt><dd>@AnalyticsFormat.Number(_info.TotalViews) <span class="dc-muted">(@AnalyticsFormat.Number(_info.BotViews) from bots)</span></dd>
+                <dt>Oldest · newest</dt><dd>@(_info.OldestUtc is { } o ? AnalyticsFormat.Local(o) : "—") · @(_info.NewestUtc is { } n ? AnalyticsFormat.Local(n) : "—")</dd>
+                <dt>Geolocation cache</dt><dd>@AnalyticsFormat.Number(_info.GeoCacheEntries) addresses · @AnalyticsFormat.Number(_info.ViewsAwaitingGeo) views waiting</dd>
+                <dt>Worker</dt><dd>@_info.QueueLength queued @if (_info.Dropped > 0) { <span class="dc-badge dc-badge-warn" style="margin-left:6px">@AnalyticsFormat.Number(_info.Dropped) dropped since start</span> }</dd>
+            </dl>
+            <div class="dc-data-actions">
+                <a class="dc-btn" href="@ExportUrl" target="_blank" rel="noopener"><Icon Name="download" Size="14" /> Export CSV (@AnalyticsFormat.RangeLabel(Range))</a>
+                <button type="button" class="dc-btn" @onclick="ClearGeoAsync" disabled="@_busy"><Icon Name="refresh" Size="14" /> Clear geolocation cache</button>
+            </div>
+        }
+    </section>
+
+    <section class="dc-card dc-danger-zone">
+        <div class="dc-card-head"><h3><Icon Name="alert" Size="16" /> Delete page views</h3></div>
+        <p class="dc-muted">Deleting is immediate and cannot be undone. Retention above removes old views automatically.</p>
+        <div class="dc-data-actions">
+            <span class="dc-inline">
+                <span>Older than</span>
+                <input class="dc-input" type="number" min="1" max="36500" @bind="_deleteDays" style="max-width:100px" />
+                <span>days</span>
+                <button type="button" class="dc-btn dc-btn-danger-ghost" @onclick="() => _confirm = ConfirmKind.Older" disabled="@_busy"><Icon Name="trash" Size="14" /> Delete</button>
+            </span>
+            <button type="button" class="dc-btn dc-btn-danger" @onclick="() => _confirm = ConfirmKind.All" disabled="@_busy"><Icon Name="trash" Size="14" /> Delete all page views</button>
+        </div>
+    </section>
+</div>
+
+@if (_confirm != ConfirmKind.None)
+{
+    <ConfirmDialog Title="@(_confirm == ConfirmKind.All ? "Delete every page view?" : $"Delete page views older than {_deleteDays} days?")"
+                   Message="@(_confirm == ConfirmKind.All ? "All analytics data will be removed. Settings are kept." : "Older page views are removed; recent ones stay.")"
+                   ConfirmText="Delete" Danger="true"
+                   OnConfirm="DeleteConfirmedAsync" OnCancel="() => _confirm = ConfirmKind.None" />
+}
+
+@code {
+    [Parameter] public AnalyticsRange Range { get; set; } = AnalyticsRange.LastDays(30);
+
+    private enum ConfirmKind { None, All, Older }
+
+    private AnalyticsSettings _s = new();
+    private string _excluded = string.Empty;
+    private AnalyticsDataInfo? _info;
+    private bool _busy;
+    private int _deleteDays = 90;
+    private ConfirmKind _confirm;
+
+    private string ExportUrl =>
+        $"/admin/analytics/export?from={Range.From.ToLocalTime():yyyy-MM-dd}&to={Range.To.AddSeconds(-1).ToLocalTime():yyyy-MM-dd}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        Load();
+        await LoadInfoAsync();
+    }
+
+    private void Load()
+    {
+        _s = Settings.Current.Clone();
+        _excluded = string.Join("\n", _s.ExcludedPaths);
+    }
+
+    private async Task LoadInfoAsync()
+    {
+        try
+        {
+            _info = await Analytics.GetDataInfoAsync();
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex, "Could not read analytics data");
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _busy = true;
+        try
+        {
+            _s.ExcludedPaths = _excluded.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+            await Settings.SaveAsync(_s);
+            Load();
+            Toasts.Success("Analytics settings saved");
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex, "Settings not saved");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ResetAsync()
+    {
+        _busy = true;
+        try
+        {
+            await Settings.ResetAsync();
+            Load();
+            Toasts.Success("Analytics settings reset to defaults");
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ClearGeoAsync()
+    {
+        _busy = true;
+        try
+        {
+            var n = await Analytics.ClearGeoCacheAsync();
+            Toasts.Success("Geolocation cache cleared", $"{n:N0} cached addresses removed; new visits are looked up again.");
+            await LoadInfoAsync();
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DeleteConfirmedAsync()
+    {
+        var kind = _confirm;
+        _confirm = ConfirmKind.None;
+        _busy = true;
+        try
+        {
+            var cutoff = kind == ConfirmKind.Older ? DateTime.UtcNow.AddDays(-Math.Max(1, _deleteDays)) : (DateTime?)null;
+            var n = await Analytics.DeleteViewsAsync(cutoff);
+            Toasts.Success("Page views deleted", $"{n:N0} rows removed.");
+            await LoadInfoAsync();
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex, "Delete failed");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

@@ -1,0 +1,81 @@
+@namespace DynCMS.UI.Rendering
+@using Microsoft.Extensions.Logging
+@inherits CmsTemplateBase
+@implements IDisposable
+@inject IStoredTemplateRenderer Renderer
+@inject NavigationManager Nav
+@inject ILogger<CmsLiquidTemplate> Logger
+
+@if (_error is not null)
+{
+    @if (Content.IsPreview)
+    {
+        <div style="margin:16px;padding:14px 18px;border:1px solid #f1c0c0;background:#fdeaea;color:#8a1f24;border-radius:10px;font:14px/1.5 system-ui,sans-serif">
+            <strong>Template error</strong> in <code>@Alias</code>: @_error
+            <div style="margin-top:6px"><a href="/admin/settings/templates" style="color:inherit;font-weight:600">Edit templates</a></div>
+        </div>
+    }
+    else
+    {
+        <!-- DynCMS: template '@Alias' failed to render. Sign in and open the page with ?preview=true for details. -->
+    }
+}
+else
+{
+    @_html
+}
+
+@code {
+    /// <summary>Alias of the stored template to render.</summary>
+    [Parameter, EditorRequired] public string Alias { get; set; } = string.Empty;
+
+    private MarkupString _html;
+    private string? _error;
+    private string? _renderedKey;
+
+    protected override void OnInitialized() => Nav.LocationChanged += OnLocationChanged;
+
+    protected override Task OnParametersSetAsync() => RenderIfChangedAsync();
+
+    // The template sees the request (request.path, request.query — what "paginate" reads ?page= from), so a change
+    // of the query string alone, /blog → /blog?page=2, has to render again. The router does not re-render this
+    // component for that (the route and its parameters are the same), hence the subscription.
+    private async void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        try
+        {
+            await InvokeAsync(async () =>
+            {
+                if (await RenderIfChangedAsync()) StateHasChanged();
+            });
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Stored template {Alias} failed to re-render after navigation", Alias);
+        }
+    }
+
+    /// <summary>Renders when the target, the content or the request changed since the last render. Returns whether it did.</summary>
+    private async Task<bool> RenderIfChangedAsync()
+    {
+        var uri = Nav.ToAbsoluteUri(Nav.Uri);
+        var key = $"{Alias}|{Content.Id}|{Content.IsPreview}|{Content.UpdatedAt:O}|{uri.PathAndQuery}";
+        if (key == _renderedKey) return false;
+        _renderedKey = key;
+
+        try
+        {
+            _html = new MarkupString(await Renderer.RenderAsync(Alias, Content, LiquidRequest.FromUri(uri)));
+            _error = null;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Stored template {Alias} failed to render content {ContentId}", Alias, Content.Id);
+            _error = ex.Message;
+            _html = default;
+        }
+        return true;
+    }
+
+    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+}

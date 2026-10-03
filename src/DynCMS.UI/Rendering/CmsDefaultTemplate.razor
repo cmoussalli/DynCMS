@@ -1,0 +1,14 @@
+@namespace DynCMS.UI.Rendering
+@inherits CmsTemplateBase
+
+<article class="dc-default-template">
+    <h1>@Content.Name</h1>
+    <p class="dc-muted">No template is assigned to this content (document type <code>@Content.ContentTypeAlias</code>). Showing raw property values.</p>
+    <dl>
+        @foreach (var (alias, value) in Content.Values.OrderBy(v => v.Key))
+        {
+            <dt>@alias</dt>
+            <dd>@(string.IsNullOrEmpty(value) ? "—" : value)</dd>
+        }
+    </dl>
+</article>

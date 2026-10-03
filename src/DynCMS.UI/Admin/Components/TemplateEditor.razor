@@ -1,0 +1,931 @@
+@namespace DynCMS.UI.Admin.Components
+@implements IAsyncDisposable
+@inject ITemplateService TemplateService
+@inject ITemplateRegistry Registry
+@inject ILiquidTemplateEngine Engine
+@inject ITemplatePreviewService Preview
+@inject IContentTypeService ContentTypes
+@inject IPropertyEditorRegistry Editors
+@inject ToastService Toasts
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+@if (_template is null)
+{
+    <div class="dc-workspace-empty">
+        @if (_loading)
+        {
+            <div class="dc-loading"><span class="dc-spinner"></span> Loading…</div>
+        }
+        else
+        {
+            <span class="dc-empty-tile"><Icon Name="alert" Size="32" /></span>
+            <h2>Template not found</h2>
+            <p>It may have been deleted.</p>
+        }
+    </div>
+}
+else
+{
+    <div class="dc-editor">
+        <header class="dc-editor-head">
+            <div class="dc-editor-title">
+                <span class="dc-editor-type">
+                    <Icon Name="@(_template.IsPartial ? "layers" : "layout")" Size="14" />
+                    @(_template.IsPartial ? "Partial" : "Template")
+                </span>
+                <input class="dc-editor-name" type="text" placeholder="@(_template.IsPartial ? "Partial name" : "Template name")"
+                       @bind="_template.Name" @bind:event="oninput" @bind:after="OnNameChanged" />
+            </div>
+            <div class="dc-editor-status">
+                <div class="dc-segmented" role="group" aria-label="Template kind">
+                    <button type="button" class="@(_template.IsPartial ? null : "dc-active")" title="Renders a whole page; selectable on document types and content"
+                            @onclick="() => SetRole(TemplateRole.Page)"><Icon Name="layout" Size="14" /> Page</button>
+                    <button type="button" class="@(_template.IsPartial ? "dc-active" : null)" title="A fragment other templates pull in with a render tag"
+                            @onclick="() => SetRole(TemplateRole.Partial)"><Icon Name="layers" Size="14" /> Partial</button>
+                </div>
+                @if (_overridesComponent)
+                {
+                    <span class="dc-badge dc-badge-warn" title="Content with this alias renders this template instead of the component registered in code.">Overrides component</span>
+                }
+                @if (_usage.ContentCount > 0)
+                {
+                    <span class="dc-badge dc-badge-info">@_usage.ContentCount content item(s)</span>
+                }
+                @if (_usage.UsedBy.Count > 0)
+                {
+                    <span class="dc-badge dc-badge-muted">Rendered by @_usage.UsedBy.Count</span>
+                }
+                @if (_syntaxError is not null)
+                {
+                    <span class="dc-badge dc-badge-warn">Syntax error</span>
+                }
+            </div>
+        </header>
+
+        <nav class="dc-tabs">
+            <button type="button" class="@(_tab == "code" ? "dc-active" : null) @(_syntaxError is not null ? "dc-tab-error" : null)"
+                    @onclick='() => SetTabAsync("code")'><Icon Name="code" Size="14" /> Code</button>
+            <button type="button" class="@(_tab == "info" ? "dc-active" : null)"
+                    @onclick='() => SetTabAsync("info")'><Icon Name="info" Size="14" /> Info &amp; usage</button>
+        </nav>
+
+        <div class="dc-editor-body">
+            @if (_tab == "code")
+            {
+                @if (IsNew && !_starterChosen)
+                {
+                    <div class="dc-card dc-mb">
+                        <h3><Icon Name="sparkles" Size="16" /> Start from</h3>
+                        <p class="dc-muted">Pick a starting point — all of it can be changed afterwards.</p>
+                        <div class="dc-starters">
+                            @foreach (var starter in TemplateSamples.Starters)
+                            {
+                                <button type="button" class="dc-starter" @onclick="() => ApplyStarterAsync(starter)">
+                                    <strong><Icon Name="@starter.Icon" Size="15" /> @starter.Name</strong>
+                                    <small>@starter.Description</small>
+                                    <small class="dc-muted">@(starter.Role == TemplateRole.Partial ? "Partial view" : "Page template")</small>
+                                </button>
+                            }
+                            @if (_allTypes.Count > 0)
+                            {
+                                <div class="dc-starter" style="cursor:default">
+                                    <strong><Icon Name="box" Size="15" /> From a document type</strong>
+                                    <small>Every property already in the markup.</small>
+                                    <select class="dc-input" @onchange="ScaffoldFromTypeAsync">
+                                        <option value="">Choose a document type…</option>
+                                        @foreach (var t in _allTypes)
+                                        {
+                                            <option value="@t.Id">@t.Name</option>
+                                        }
+                                    </select>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+
+                <div class="dc-toolbar">
+                    <span class="dc-toolbar-alias"><code>@(_template.Alias.Length > 0 ? _template.Alias : "alias")</code> Liquid</span>
+                    <span class="dc-sep"></span>
+
+                    <div class="dc-menu">
+                        <button type="button" class="dc-btn dc-btn-sm" @onclick='() => Toggle("insert")'>
+                            <Icon Name="plus" Size="14" /> Insert <Icon Name="chevron-down" Size="12" />
+                        </button>
+                        @if (_menu == "insert")
+                        {
+                            <div class="dc-menu-panel">
+                                <div class="dc-menu-head">Properties@(_propertyOwner is null ? "" : " · " + _propertyOwner)</div>
+                                @if (_properties.Count == 0)
+                                {
+                                    <p class="dc-menu-empty">No document type has properties to insert yet.</p>
+                                }
+                                @foreach (var p in _properties)
+                                {
+                                    <button type="button" class="dc-menu-item" @onclick="() => InsertValueAsync(p.Insert)">
+                                        <strong>@p.Name@(p.Mandatory ? " *" : "")</strong>
+                                        <code>{{ @p.Insert }}</code>
+                                        <small>@p.Editor</small>
+                                    </button>
+                                }
+                                <div class="dc-menu-head">The page</div>
+                                @foreach (var v in _pageVariables)
+                                {
+                                    <button type="button" class="dc-menu-item" @onclick="() => InsertValueAsync(v.Insert)">
+                                        <strong>@v.Label</strong>
+                                        <small>@v.Detail</small>
+                                    </button>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    <div class="dc-menu">
+                        <button type="button" class="dc-btn dc-btn-sm" @onclick='() => Toggle("snippets")'>
+                            <Icon Name="zap" Size="14" /> Snippets <Icon Name="chevron-down" Size="12" />
+                        </button>
+                        @if (_menu == "snippets")
+                        {
+                            <div class="dc-menu-panel">
+                                <div class="dc-menu-head">Blocks</div>
+                                @foreach (var s in TemplateIntellisense.Snippets)
+                                {
+                                    <button type="button" class="dc-menu-item" @onclick="() => InsertAsync(s.Insert)">
+                                        <strong>@s.Label</strong>
+                                        <small>@s.Detail</small>
+                                    </button>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    <div class="dc-menu">
+                        <button type="button" class="dc-btn dc-btn-sm" @onclick='() => Toggle("partials")'>
+                            <Icon Name="layers" Size="14" /> Partials <Icon Name="chevron-down" Size="12" />
+                        </button>
+                        @if (_menu == "partials")
+                        {
+                            <div class="dc-menu-panel">
+                                <div class="dc-menu-head">Render a partial</div>
+                                @if (_partials.Count == 0)
+                                {
+                                    <p class="dc-menu-empty">No partials yet — create one below, or switch this template to a partial.</p>
+                                }
+                                @foreach (var p in _partials)
+                                {
+                                    <button type="button" class="dc-menu-item" @onclick="() => InsertPartialAsync(p.Alias, false)">
+                                        <strong><Icon Name="layers" Size="13" /> @p.Name</strong>
+                                        <code>{% render '@p.Alias' %}</code>
+                                    </button>
+                                    <button type="button" class="dc-menu-item" @onclick="() => InsertPartialAsync(p.Alias, true)">
+                                        <code>{% render '@p.Alias', content: item %}</code>
+                                        <small>For one item inside a loop</small>
+                                    </button>
+                                }
+                                <div class="dc-menu-head">New</div>
+                                <a class="dc-menu-item" href="/admin/settings/templates/new?role=partial">
+                                    <strong><Icon Name="plus" Size="13" /> Create a partial</strong>
+                                    <small>A fragment you can render from any template</small>
+                                </a>
+                            </div>
+                        }
+                    </div>
+
+                    <span class="dc-sep"></span>
+                    <button type="button" class="dc-btn dc-btn-sm" @onclick="CheckSyntaxAsync"><Icon Name="check-circle" Size="14" /> Check</button>
+
+                    <span class="dc-spacer"></span>
+                    <div class="dc-segmented">
+                        <button type="button" class="@(_pane == "preview" ? "dc-active" : null)" @onclick='() => SetPane("preview")'><Icon Name="eye" Size="14" /> Preview</button>
+                        <button type="button" class="@(_pane == "reference" ? "dc-active" : null)" @onclick='() => SetPane("reference")'><Icon Name="book" Size="14" /> Help</button>
+                        <button type="button" class="@(_pane == "none" ? "dc-active" : null)" title="Full width" @onclick='() => SetPane("none")'><Icon Name="grid" Size="14" /> Code</button>
+                    </div>
+                </div>
+
+                @if (_syntaxError is not null)
+                {
+                    <div class="dc-alert dc-alert-error"><Icon Name="alert" Size="15" /> <span>@_syntaxError</span></div>
+                }
+
+                <div class="dc-tpl @(_pane == "none" ? "dc-tpl-wide" : null)">
+                    <div class="dc-tpl-main">
+                        <div class="dc-ed @(_pane == "none" ? "dc-ed-tall" : null)" @ref="_editorRoot">
+                            <div class="dc-ed-gutter"></div>
+                            <div class="dc-ed-wrap">
+                                <pre class="dc-ed-highlight" aria-hidden="true"></pre>
+                                <textarea spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off"
+                                          aria-label="Template markup" placeholder="Write Liquid markup here…"></textarea>
+                                <div class="dc-ed-popup"></div>
+                            </div>
+                        </div>
+                        <div class="dc-ed-status">
+                            <span><kbd>Ctrl</kbd>+<kbd>S</kbd> save</span>
+                            <span><kbd>Ctrl</kbd>+<kbd>Space</kbd> suggestions</span>
+                            <span><kbd>Ctrl</kbd>+<kbd>/</kbd> comment</span>
+                            <span><kbd>Tab</kbd> indent</span>
+                            <span class="dc-spacer"></span>
+                            @if (_template.IsPartial && _template.Alias.Length > 0)
+                            {
+                                <span>Render it with <code>{% render '@_template.Alias' %}</code></span>
+                            }
+                        </div>
+                    </div>
+
+                    @if (_pane == "preview")
+                    {
+                        <aside class="dc-tpl-side dc-preview-side">
+                            <div class="dc-preview">
+                                <div class="dc-preview-head">
+                                    <select class="dc-input" value="@_previewTargetId" @onchange="OnPreviewTargetChanged" title="Content to preview against">
+                                        @foreach (var t in _previewTargets)
+                                        {
+                                            <option value="@t.Id">@t.Name</option>
+                                        }
+                                    </select>
+                                    <button type="button" class="dc-btn dc-btn-sm" title="Render again" @onclick="RefreshPreviewAsync"><Icon Name="refresh" Size="14" /></button>
+                                </div>
+                                @if (_previewError is not null)
+                                {
+                                    <div class="dc-alert dc-alert-error"><Icon Name="alert" Size="15" /> <span>@_previewError</span></div>
+                                }
+                                <iframe class="dc-preview-frame" title="Template preview" sandbox="allow-same-origin" @ref="_previewFrame"></iframe>
+                                <p class="dc-preview-note">
+                                    Draft values, rendered with the site's stylesheets.
+                                    @(_previewSample ? "This content is made up — nothing is saved." : "")
+                                </p>
+                            </div>
+                        </aside>
+                    }
+                    else if (_pane == "reference")
+                    {
+                        <aside class="dc-tpl-side">
+                            <div class="dc-ref">
+                                <h4>Properties — click to insert</h4>
+                                @if (_allTypes.Count > 1)
+                                {
+                                    <select class="dc-input dc-ref-search" value="@_propertyTypeId" @onchange="OnPropertyTypeChanged">
+                                        <option value="">@(_allowedTypes.Count > 0 ? "Document types using this template" : "All document types")</option>
+                                        @foreach (var t in _allTypes)
+                                        {
+                                            <option value="@t.Id">@t.Name</option>
+                                        }
+                                    </select>
+                                }
+                                @if (_properties.Count == 0)
+                                {
+                                    <p class="dc-muted">No properties to show. Pick a document type above.</p>
+                                }
+                                <div class="dc-chips">
+                                    @foreach (var p in _properties)
+                                    {
+                                        <button type="button" class="dc-chip @(p.Mandatory ? "dc-chip-mandatory" : null)" title="@p.Name · @p.Editor"
+                                                @onclick="() => InsertValueAsync(p.Insert)">@p.Alias</button>
+                                    }
+                                </div>
+
+                                <h4>Variables</h4>
+                                <div class="dc-chips">
+                                    @foreach (var v in TemplateIntellisense.Variables)
+                                    {
+                                        <button type="button" class="dc-chip" title="@v.Detail" @onclick="() => InsertValueAsync(v.Insert)">@v.Label</button>
+                                    }
+                                </div>
+
+                                <h4>Filters</h4>
+                                <div class="dc-chips">
+                                    @foreach (var f in TemplateIntellisense.Filters)
+                                    {
+                                        <button type="button" class="dc-chip" title="@f.Detail" @onclick="() => InsertFilterAsync(f.Insert)">@f.Label</button>
+                                    }
+                                </div>
+
+                                <h4>Tags</h4>
+                                <pre class="dc-ref-code">{% if content.summary %}…{% endif %}
+{% for item in content.children %}…{% endfor %}
+{% assign img = content.image | media %}
+{% render 'cardAlias', content: item %}</pre>
+                                <p class="dc-muted">Output is HTML-encoded unless you pipe it through <code>raw</code>. A partial sees whatever you pass it as <code>content</code>.</p>
+
+                                @if (_usage.Uses.Count > 0)
+                                {
+                                    <h4>Partials used here</h4>
+                                    <ul class="dc-plain-list">
+                                        @foreach (var alias in _usage.Uses)
+                                        {
+                                            <li>
+                                                @if (Registry.Get(alias) is { StoredId: Guid sid } found)
+                                                {
+                                                    <a href="/admin/settings/templates/@sid"><Icon Name="layers" Size="14" /> @found.Name</a>
+                                                }
+                                                else
+                                                {
+                                                    <span class="dc-error"><Icon Name="alert" Size="14" /> @alias is missing</span>
+                                                }
+                                            </li>
+                                        }
+                                    </ul>
+                                }
+                            </div>
+                        </aside>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="dc-info-grid">
+                    <div class="dc-info-card">
+                        <h4>Identity</h4>
+                        <label class="dc-field">
+                            <span class="dc-label">Alias</span>
+                            <input class="dc-input dc-mono" type="text" @bind="_template.Alias" @bind:event="oninput" @bind:after="OnAliasChanged" />
+                            <small class="dc-muted">Stored on content and document types, and what a render tag looks up. Changing it does not update what already points at the old alias.</small>
+                        </label>
+                        <label class="dc-field">
+                            <span class="dc-label">Description</span>
+                            <textarea class="dc-input" rows="3" @bind="_template.Description"></textarea>
+                        </label>
+                        <div class="dc-field">
+                            <span class="dc-label">Kind</span>
+                            <div class="dc-segmented">
+                                <button type="button" class="@(_template.IsPartial ? null : "dc-active")" @onclick="() => SetRole(TemplateRole.Page)"><Icon Name="layout" Size="14" /> Page template</button>
+                                <button type="button" class="@(_template.IsPartial ? "dc-active" : null)" @onclick="() => SetRole(TemplateRole.Partial)"><Icon Name="layers" Size="14" /> Partial view</button>
+                            </div>
+                            <small class="dc-muted">
+                                @if (_template.IsPartial)
+                                {
+                                    <text>A partial is rendered from another template and is never offered as a page template.</text>
+                                }
+                                else
+                                {
+                                    <text>A page template can be selected on document types and content. Switching it to a partial takes it off the content that uses it.</text>
+                                }
+                            </small>
+                        </div>
+                        @if (_overridesComponent)
+                        {
+                            <div class="dc-alert dc-alert-warn"><Icon Name="info" Size="15" /> <span>A component template <code>@_componentName</code> is registered in code with this alias. Content renders this stored template instead; delete it to fall back to the component.</span></div>
+                        }
+                    </div>
+
+                    <div class="dc-info-card">
+                        <h4>Details</h4>
+                        <dl>
+                            <dt>Id</dt><dd><code>@_template.Id</code></dd>
+                            <dt>Created</dt><dd>@(IsNew ? "—" : _template.CreatedAt.ToLocalTime().ToString("g"))</dd>
+                            <dt>Updated</dt><dd>@(IsNew ? "—" : _template.UpdatedAt.ToLocalTime().ToString("g"))</dd>
+                            <dt>Lines</dt><dd>@(_source.Split('\n').Length)</dd>
+                            <dt>Content items</dt><dd>@_usage.ContentCount</dd>
+                        </dl>
+                    </div>
+
+                    @if (!_template.IsPartial)
+                    {
+                        <div class="dc-info-card">
+                            <h4>Allowed on document types</h4>
+                            @if (_usage.DocumentTypes.Count == 0)
+                            {
+                                <p class="dc-muted">No document type allows this template yet. Open a document type and tick it on its <em>Templates</em> tab.</p>
+                            }
+                            <ul class="dc-plain-list">
+                                @foreach (var t in _usage.DocumentTypes)
+                                {
+                                    <li>
+                                        <a href="/admin/settings/document-types/@t.Id"><Icon Name="@t.Icon" Size="14" /> @t.Name</a>
+                                        @if (string.Equals(t.DefaultTemplateAlias, _template.Alias, StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            <span class="dc-badge dc-badge-muted">default</span>
+                                        }
+                                    </li>
+                                }
+                            </ul>
+                        </div>
+                    }
+
+                    <div class="dc-info-card">
+                        <h4>Rendered by</h4>
+                        @if (_usage.UsedBy.Count == 0)
+                        {
+                            <p class="dc-muted">No other template renders this one.</p>
+                        }
+                        <ul class="dc-plain-list">
+                            @foreach (var t in _usage.UsedBy)
+                            {
+                                <li><a href="/admin/settings/templates/@t.Id"><Icon Name="@(t.IsPartial ? "layers" : "layout")" Size="14" /> @t.Name</a> <code>@t.Alias</code></li>
+                            }
+                        </ul>
+                    </div>
+
+                    <div class="dc-info-card">
+                        <h4>Uses these partials</h4>
+                        @if (_usage.Uses.Count == 0)
+                        {
+                            <p class="dc-muted">This template renders no partials. Add one from the <em>Partials</em> menu on the Code tab.</p>
+                        }
+                        <ul class="dc-plain-list">
+                            @foreach (var alias in _usage.Uses)
+                            {
+                                <li>
+                                    @if (Registry.Get(alias) is { StoredId: Guid sid } found)
+                                    {
+                                        <a href="/admin/settings/templates/@sid"><Icon Name="layers" Size="14" /> @found.Name</a>
+                                        <code>@alias</code>
+                                    }
+                                    else
+                                    {
+                                        <span class="dc-error"><Icon Name="alert" Size="14" /> <code>@alias</code> does not exist</span>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    </div>
+                </div>
+            }
+        </div>
+
+        <footer class="dc-editor-foot">
+            @if (!IsNew)
+            {
+                <button type="button" class="dc-btn dc-btn-danger-ghost" @onclick="() => _confirmDelete = true"><Icon Name="trash" Size="14" /> Delete</button>
+                <button type="button" class="dc-btn" @onclick="DuplicateAsync"><Icon Name="copy" Size="14" /> Duplicate</button>
+            }
+            <span class="dc-spacer"></span>
+            @if (_dirty)
+            {
+                <span class="dc-editor-meta"><span class="dc-dot dc-dot-warn"></span> Unsaved changes</span>
+            }
+            <button type="button" class="dc-btn dc-btn-primary" disabled="@_busy" @onclick="SaveAsync"><Icon Name="save" Size="14" /> Save</button>
+        </footer>
+    </div>
+
+    @if (_menu is not null)
+    {
+        <div class="dc-menu-backdrop" @onclick="() => _menu = null"></div>
+    }
+
+    @if (_confirmDelete)
+    {
+        <ConfirmDialog Title="Delete template" Message="@DeleteMessage" ConfirmText="Delete" Danger="true" OnConfirm="DeleteAsync" OnCancel="() => _confirmDelete = false" />
+    }
+}
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+    /// <summary>What a new template starts as; "partial" creates a partial view.</summary>
+    [Parameter] public string? NewRole { get; set; }
+    [Parameter] public EventCallback OnSaved { get; set; }
+    [Parameter] public EventCallback OnDeleted { get; set; }
+
+    private Template? _template;
+    private string _source = string.Empty;
+    private TemplateUsage _usage = TemplateUsage.Empty;
+    private IReadOnlyList<ContentType> _allTypes = [];
+    private IReadOnlyList<ContentType> _allowedTypes = [];
+    private IReadOnlyList<TemplateProperty> _properties = [];
+    private IReadOnlyList<TemplateDefinition> _partials = [];
+    private IReadOnlyList<TemplateCompletion> _pageVariables = TemplateIntellisense.Variables.Take(9).ToList();
+    private List<object> _completions = [];
+
+    private string _tab = "code";
+    private string _pane = "preview";
+    private string? _menu;
+    private string? _propertyTypeId;
+    private string? _propertyOwner;
+    private bool _loading = true;
+    private bool _busy;
+    private bool _dirty;
+    private bool _aliasEdited;
+    private bool _starterChosen;
+    private bool _confirmDelete;
+    private bool _overridesComponent;
+    private string? _componentName;
+    private string? _syntaxError;
+    private Guid? _loadedId = Guid.Empty;
+
+    private IReadOnlyList<TemplatePreviewTarget> _previewTargets = [];
+    private Guid? _previewTargetId;
+    private string? _previewError;
+    private bool _previewSample;
+    private bool _previewPending;
+    private CancellationTokenSource? _previewDebounce;
+
+    private ElementReference _editorRoot;
+    private ElementReference _previewFrame;
+    private IJSObjectReference? _module;
+    private DotNetObjectReference<TemplateEditor>? _self;
+    private bool _editorReady;
+
+    private bool IsNew => Id is null;
+
+    private string DeleteMessage => _overridesComponent
+        ? $"Delete \"{_template!.Name}\"? Content using this alias will render the component template registered in code again."
+        : $"Delete \"{_template!.Name}\"? This is only possible when nothing uses it.";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedId == Id && _template is not null) return;
+        _loadedId = Id;
+        await LoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_template is null || _tab != "code")
+        {
+            _editorReady = false;
+            return;
+        }
+
+        if (!_editorReady)
+        {
+            try
+            {
+                _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./_content/DynCMS.UI/dyncms-liquid-editor.js");
+                _self ??= DotNetObjectReference.Create(this);
+                await _module.InvokeVoidAsync("init", _editorRoot, _self, new { value = _source, completions = _completions });
+                _editorReady = true;
+                if (_pane == "preview") _previewPending = true;
+            }
+            catch (JSDisconnectedException) { return; }
+        }
+
+        if (_previewPending)
+        {
+            _previewPending = false;
+            await RefreshPreviewAsync();
+        }
+    }
+
+    // ---- loading ------------------------------------------------------------------------------
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _syntaxError = null;
+        _previewError = null;
+        _dirty = false;
+        _editorReady = false;
+        _propertyTypeId = null;
+
+        if (Id is Guid id)
+        {
+            _template = await TemplateService.GetAsync(id);
+            _aliasEdited = true;
+            _starterChosen = true;
+        }
+        else
+        {
+            var role = string.Equals(NewRole, "partial", StringComparison.OrdinalIgnoreCase) ? TemplateRole.Partial : TemplateRole.Page;
+            _template = new Template { Role = role, Content = TemplateSamples.For(role) };
+            _aliasEdited = false;
+            _starterChosen = false;
+        }
+
+        _source = _template?.Content ?? string.Empty;
+        await RefreshContextAsync();
+        _loading = false;
+    }
+
+    /// <summary>Reloads everything that depends on the alias: usage, the properties on offer and the partials.</summary>
+    private async Task RefreshContextAsync()
+    {
+        if (_template is null) return;
+
+        var component = Registry.GetComponent(_template.Alias);
+        _overridesComponent = component is not null;
+        _componentName = component?.ComponentType?.FullName;
+
+        _usage = string.IsNullOrWhiteSpace(_template.Alias)
+            ? TemplateUsage.Empty
+            : await TemplateService.GetUsageAsync(_template.Alias, _template.Id);
+
+        _allTypes = await ContentTypes.GetAllAsync();
+        _allowedTypes = _allTypes
+            .Where(t => t.AllowedTemplateAliases.Contains(_template.Alias, StringComparer.OrdinalIgnoreCase))
+            .ToList();
+        RefreshProperties();
+
+        _partials = Registry.Partials.Where(p => !string.Equals(p.Alias, _template.Alias, StringComparison.OrdinalIgnoreCase)).ToList();
+        _previewTargets = await Preview.GetTargetsAsync(_template.Alias);
+        if (_previewTargetId is null || _previewTargets.All(t => t.Id != _previewTargetId))
+            _previewTargetId = _previewTargets.FirstOrDefault()?.Id;
+
+        BuildCompletions();
+    }
+
+    private void RefreshProperties()
+    {
+        IReadOnlyList<ContentType> source;
+        if (Guid.TryParse(_propertyTypeId, out var chosen) && _allTypes.FirstOrDefault(t => t.Id == chosen) is { } one)
+        {
+            source = [one];
+            _propertyOwner = one.Name;
+        }
+        else if (_allowedTypes.Count > 0)
+        {
+            source = _allowedTypes;
+            _propertyOwner = _allowedTypes.Count == 1 ? _allowedTypes[0].Name : $"{_allowedTypes.Count} document types";
+        }
+        else
+        {
+            source = _allTypes;
+            _propertyOwner = _allTypes.Count == 0 ? null : "all document types";
+        }
+
+        _properties = TemplateIntellisense.PropertiesOf(source, Editors);
+    }
+
+    private void BuildCompletions()
+    {
+        var items = TemplateIntellisense.Build(TemplateIntellisense.PropertiesOf(_allTypes, Editors), _partials);
+        _completions = items
+            .Select(object (i) => new { label = i.Label, kind = i.Kind, insert = i.Insert, detail = i.Detail })
+            .ToList();
+    }
+
+    // ---- editing ------------------------------------------------------------------------------
+
+    [JSInvokable]
+    public Task OnSourceChanged(string value)
+    {
+        _source = value;
+        if (_template is not null) _template.Content = value;
+
+        // Only re-render when something visible changed; every keystroke arrives here.
+        var wasDirty = _dirty;
+        var wasError = _syntaxError;
+        _dirty = true;
+        if (_syntaxError is not null) _syntaxError = Validate();
+        if (!wasDirty || wasError != _syntaxError) StateHasChanged();
+
+        SchedulePreview();
+        return Task.CompletedTask;
+    }
+
+    [JSInvokable]
+    public Task OnSaveShortcut() => SaveAsync();
+
+    private async Task SetTabAsync(string tab)
+    {
+        if (_tab == "code") await SyncSourceAsync();
+        _tab = tab;
+        _menu = null;
+        if (tab != "code") _editorReady = false;
+    }
+
+    /// <summary>
+    /// Pulls the current text out of the editor. Typing is reported on a short debounce, so anything that acts on
+    /// the source (saving, validating, leaving the tab) reads it straight from the textarea first.
+    /// </summary>
+    private async Task SyncSourceAsync()
+    {
+        if (_module is null || !_editorReady) return;
+        try
+        {
+            _source = await _module.InvokeAsync<string>("getValue", _editorRoot);
+            if (_template is not null) _template.Content = _source;
+        }
+        catch (JSDisconnectedException) { }
+    }
+
+    private void Toggle(string menu) => _menu = _menu == menu ? null : menu;
+
+    private void SetPane(string pane)
+    {
+        _pane = pane;
+        _menu = null;
+        if (pane == "preview") _previewPending = true;
+    }
+
+    private Task InsertValueAsync(string expression) => InsertAsync("{{ " + expression + " }}");
+
+    private Task InsertFilterAsync(string filter) => InsertAsync(" | " + filter);
+
+    private Task InsertPartialAsync(string alias, bool withItem) =>
+        InsertAsync(withItem ? "{% render '" + alias + "', content: item %}" : "{% render '" + alias + "' %}");
+
+    private async Task InsertAsync(string text)
+    {
+        _menu = null;
+        if (_module is null || !_editorReady) return;
+        try { await _module.InvokeVoidAsync("insert", _editorRoot, text); }
+        catch (JSDisconnectedException) { }
+    }
+
+    private async Task SetSourceAsync(string text)
+    {
+        _source = text;
+        if (_template is not null) _template.Content = text;
+        _dirty = true;
+        _syntaxError = null;
+        if (_module is not null && _editorReady)
+        {
+            try { await _module.InvokeVoidAsync("setValue", _editorRoot, text); }
+            catch (JSDisconnectedException) { }
+        }
+        if (_pane == "preview") _previewPending = true;
+    }
+
+    private async Task ApplyStarterAsync(TemplateStarter starter)
+    {
+        if (_template is null) return;
+        _template.Role = starter.Role;
+        _starterChosen = true;
+        await SetSourceAsync(starter.Source);
+    }
+
+    private async Task ScaffoldFromTypeAsync(ChangeEventArgs e)
+    {
+        if (_template is null || !Guid.TryParse(e.Value?.ToString(), out var id)) return;
+        var type = await ContentTypes.GetAsync(id);
+        if (type is null) return;
+
+        _starterChosen = true;
+        if (string.IsNullOrWhiteSpace(_template.Name))
+        {
+            _template.Name = _template.IsPartial ? $"{type.Name} card" : type.Name;
+            OnNameChanged();
+        }
+        await SetSourceAsync(TemplateSamples.Scaffold(type, _template.Role));
+    }
+
+    private void SetRole(TemplateRole role)
+    {
+        if (_template is null || _template.Role == role) return;
+        _template.Role = role;
+        _dirty = true;
+    }
+
+    private void OnNameChanged()
+    {
+        if (!_aliasEdited) _template!.Alias = Slug.ToAlias(_template.Name);
+        _dirty = true;
+    }
+
+    private async Task OnAliasChanged()
+    {
+        _aliasEdited = !string.IsNullOrEmpty(_template!.Alias);
+        _dirty = true;
+        await RefreshContextAsync();
+    }
+
+    private void OnPropertyTypeChanged(ChangeEventArgs e)
+    {
+        _propertyTypeId = e.Value?.ToString();
+        RefreshProperties();
+    }
+
+    private string? Validate()
+    {
+        var result = Engine.Validate(_source ?? string.Empty);
+        return result.IsValid ? null : result.Error;
+    }
+
+    private async Task CheckSyntaxAsync()
+    {
+        _menu = null;
+        await SyncSourceAsync();
+        _syntaxError = Validate();
+        if (_syntaxError is null) Toasts.Success("Syntax OK", "The template parses without errors.");
+        await RefreshPreviewAsync();
+    }
+
+    // ---- preview ------------------------------------------------------------------------------
+
+    private void SchedulePreview()
+    {
+        if (_pane != "preview") return;
+        _previewDebounce?.Cancel();
+        _previewDebounce = new CancellationTokenSource();
+        var token = _previewDebounce.Token;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(600, token);
+                if (!token.IsCancellationRequested) await InvokeAsync(RefreshPreviewAsync);
+            }
+            catch (OperationCanceledException) { }
+        }, token);
+    }
+
+    private async Task OnPreviewTargetChanged(ChangeEventArgs e)
+    {
+        _previewTargetId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null;
+        await RefreshPreviewAsync();
+    }
+
+    private async Task RefreshPreviewAsync()
+    {
+        if (_template is null || _pane != "preview" || _module is null || !_editorReady) return;
+
+        try
+        {
+            await SyncSourceAsync();
+            var result = await Preview.RenderAsync(_template.Alias, _source, _previewTargetId);
+            _previewError = result.Error;
+            _previewSample = result.Target?.IsSample ?? false;
+            await _module.InvokeVoidAsync("writePreview", _previewFrame, result.Success ? result.Html : string.Empty);
+            StateHasChanged();
+        }
+        catch (JSDisconnectedException) { }
+        catch (Exception ex)
+        {
+            _previewError = ex.Message;
+            StateHasChanged();
+        }
+    }
+
+    // ---- commands -----------------------------------------------------------------------------
+
+    private async Task SaveAsync()
+    {
+        if (_template is null || _busy) return;
+        _busy = true;
+        try
+        {
+            await SyncSourceAsync();
+            _template.Content = _source;
+            var wasNew = IsNew;
+            _template = await TemplateService.SaveAsync(_template);
+            _source = _template.Content;
+            _syntaxError = null;
+            _dirty = false;
+            _starterChosen = true;
+            await RefreshContextAsync();
+
+            Toasts.Success("Template saved", _template.IsPartial
+                ? $"\"{_template.Name}\" is ready to render with the alias \"{_template.Alias}\"."
+                : $"\"{_template.Name}\" is live for content using the alias \"{_template.Alias}\".");
+
+            await OnSaved.InvokeAsync();
+            if (wasNew) Nav.NavigateTo($"/admin/settings/templates/{_template.Id}");
+            else if (_pane == "preview") _previewPending = true;
+        }
+        catch (InvalidOperationException ex)
+        {
+            if (ex.Message.Contains("syntax error", StringComparison.OrdinalIgnoreCase))
+            {
+                _syntaxError = ex.Message;
+                _tab = "code";
+            }
+            Toasts.Error("Could not save", ex.Message);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex, "Could not save the template");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task DuplicateAsync()
+    {
+        if (_template is null || IsNew) return;
+        try
+        {
+            var copy = await TemplateService.DuplicateAsync(_template.Id);
+            Toasts.Success("Template duplicated", $"\"{copy.Name}\" was created with the alias \"{copy.Alias}\".");
+            await OnSaved.InvokeAsync();
+            Nav.NavigateTo($"/admin/settings/templates/{copy.Id}");
+        }
+        catch (InvalidOperationException ex)
+        {
+            Toasts.Error("Could not duplicate", ex.Message);
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        _confirmDelete = false;
+        if (_template is null) return;
+        try
+        {
+            await TemplateService.DeleteAsync(_template.Id);
+            Toasts.Success("Template deleted", $"\"{_template.Name}\" was removed.");
+            await OnDeleted.InvokeAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            Toasts.Error("Cannot delete", ex.Message);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _previewDebounce?.Cancel();
+        try
+        {
+            if (_module is not null)
+            {
+                if (_editorReady) await _module.InvokeVoidAsync("dispose", _editorRoot);
+                await _module.DisposeAsync();
+            }
+        }
+        catch (JSDisconnectedException) { }
+        catch (ObjectDisposedException) { }
+        _self?.Dispose();
+    }
+}

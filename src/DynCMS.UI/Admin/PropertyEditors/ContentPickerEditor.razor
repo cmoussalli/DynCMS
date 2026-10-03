@@ -1,0 +1,85 @@
+@namespace DynCMS.UI.Admin.PropertyEditors
+@inherits PropertyEditorBase
+@inject IContentService Content
+
+<div class="dc-picker @(Invalid ? "dc-invalid" : null)">
+    @if (_node is not null)
+    {
+        <div class="dc-picker-item">
+            <span class="dc-picker-thumb dc-picker-thumb-file"><Icon Name="@_node.ContentType.Icon" Size="22" /></span>
+            <div class="dc-picker-text">
+                <strong>@_node.Name</strong>
+                <span>@_node.ContentType.Name · @(_node.IsPublished ? "Published" : "Unpublished")</span>
+            </div>
+            <a class="dc-btn dc-btn-ghost" href="/admin/content/@_node.Id" title="Open"><Icon Name="external" Size="14" /></a>
+            <button type="button" class="dc-btn dc-btn-ghost" title="Remove" @onclick="() => SetValueAsync(null)"><Icon Name="x" Size="14" /></button>
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(Value))
+    {
+        <div class="dc-picker-item dc-muted">Content not found. <button type="button" class="dc-link" @onclick="() => SetValueAsync(null)">Clear</button></div>
+    }
+    <button type="button" class="dc-btn" @onclick="OpenAsync"><Icon Name="link" Size="14" /> @(_node is null ? "Pick content" : "Change")</button>
+</div>
+
+@if (_open)
+{
+    <Modal Title="Select content" OnClose="() => _open = false">
+        <div class="dc-search">
+            <Icon Name="search" Size="14" />
+            <input class="dc-input" type="text" placeholder="Filter…" @bind="_filter" @bind:event="oninput" />
+        </div>
+        <ul class="dc-pick-list">
+            @foreach (var n in Filtered)
+            {
+                <li style="padding-left:@(n.Level * 18 + 8)px" @onclick="() => PickAsync(n)">
+                    <Icon Name="@n.ContentType.Icon" Size="14" />
+                    <span>@n.Name</span>
+                    <small>@n.ContentType.Name</small>
+                    @if (!n.IsPublished)
+                    {
+                        <span class="dc-badge dc-badge-muted">draft</span>
+                    }
+                </li>
+            }
+            @if (!Filtered.Any())
+            {
+                <li class="dc-muted">No content matches.</li>
+            }
+        </ul>
+    </Modal>
+}
+
+@code {
+    private ContentNode? _node;
+    private bool _open;
+    private string? _loadedFor;
+    private string? _filter;
+    private IReadOnlyList<ContentNode> _tree = [];
+
+    private IEnumerable<ContentNode> Filtered => string.IsNullOrWhiteSpace(_filter)
+        ? _tree
+        : _tree.Where(n => n.Name.Contains(_filter, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedFor == Value) return;
+        _loadedFor = Value;
+        _node = Guid.TryParse(Value, out var id) ? await Content.GetAsync(id) : null;
+    }
+
+    private async Task OpenAsync()
+    {
+        _tree = await Content.GetTreeAsync();
+        _filter = null;
+        _open = true;
+    }
+
+    private async Task PickAsync(ContentNode node)
+    {
+        _open = false;
+        _node = node;
+        _loadedFor = node.Id.ToString();
+        await SetValueAsync(node.Id.ToString());
+    }
+}

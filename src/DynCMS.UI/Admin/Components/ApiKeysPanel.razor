@@ -1,0 +1,338 @@
+@namespace DynCMS.UI.Admin.Components
+@using DynCMS.Core.Api
+@using Microsoft.Extensions.Options
+@implements IAsyncDisposable
+@inject IApiKeyService Keys
+@inject ICmsIdentity Identity
+@inject IOptions<DynCmsOptions> Options
+@inject NavigationManager Nav
+@inject ToastService Toasts
+@inject IJSRuntime JS
+
+<div class="dc-page dc-page-wide">
+    <header class="dc-page-head">
+        <h1><Icon Name="lock" Size="22" /> API &amp; AI agents</h1>
+        <p class="dc-muted">
+            Everything in this back office can also be done through the <strong>management API</strong> and the
+            <strong>MCP server</strong>: document types, templates, content, media and more. Create an <strong>API key</strong>,
+            hand it to your integration or AI agent, and it works as you, limited to the scopes you pick. Keys can be revoked at any time.
+        </p>
+    </header>
+
+    @if (!Api.Enabled)
+    {
+        <div class="dc-alert dc-alert-warn"><Icon Name="alert" Size="15" /> <span>The API is turned off in configuration (<code>DynCms:Api:Enabled</code>). Keys can be created but nothing will accept them.</span></div>
+    }
+
+    <div class="dc-info-grid">
+        <div class="dc-card dc-info-card">
+            <div class="dc-card-head"><h3><Icon Name="code" Size="16" /> REST API</h3></div>
+            <dl class="dc-dl">
+                <dt>Base URL</dt><dd><code>@ApiUrl</code></dd>
+                <dt>OpenAPI</dt><dd><a href="@OpenApiUrl" target="_blank" rel="noopener">@OpenApiUrl <Icon Name="external" Size="12" /></a></dd>
+                <dt>Authentication</dt><dd><code>Authorization: Bearer &lt;api key&gt;</code></dd>
+            </dl>
+            <pre class="dc-snippet"><code>curl -H "Authorization: Bearer @(_secret ?? "dcms_…")" @ApiUrl/</code></pre>
+        </div>
+        <div class="dc-card dc-info-card">
+            <div class="dc-card-head"><h3><Icon Name="sparkles" Size="16" /> MCP server (AI agents)</h3></div>
+            @if (Api.McpEnabled)
+            {
+                <dl class="dc-dl">
+                    <dt>Endpoint</dt><dd><code>@McpUrl</code></dd>
+                    <dt>Transport</dt><dd>Streamable HTTP, stateless</dd>
+                    <dt>Tools</dt><dd>Site overview, document types, templates (with Liquid validation and preview), content, publishing, media, users, backups</dd>
+                </dl>
+                <p class="dc-muted">Claude Code:</p>
+                <pre class="dc-snippet"><code>claude mcp add --transport http dyncms @McpUrl --header "Authorization: Bearer @(_secret ?? "dcms_…")"</code></pre>
+                <p class="dc-muted">Any MCP client that supports Streamable HTTP with custom headers works the same way.</p>
+            }
+            else
+            {
+                <p class="dc-muted">The MCP server is turned off (<code>DynCms:Api:McpEnabled</code>).</p>
+            }
+        </div>
+    </div>
+
+    @if (_secret is not null)
+    {
+        <div class="dc-card dc-secret">
+            <div class="dc-card-head">
+                <h3><Icon Name="check-circle" Size="16" /> Key created: @_secretName</h3>
+                <button type="button" class="dc-btn dc-btn-sm dc-btn-ghost" @onclick="() => _secret = null" title="Hide"><Icon Name="x" Size="14" /></button>
+            </div>
+            <p><strong>Copy it now.</strong> This is the only time the secret is shown; DynCMS stores only a hash.</p>
+            <div class="dc-secret-row">
+                <code class="dc-secret-value">@_secret</code>
+                <button type="button" class="dc-btn dc-btn-primary" @onclick="() => CopyAsync(_secret)"><Icon Name="copy" Size="14" /> Copy</button>
+            </div>
+        </div>
+    }
+
+    <div class="dc-card">
+        <div class="dc-card-head"><h3><Icon Name="plus" Size="16" /> Create an API key</h3></div>
+        @if (_grantable.Count == 0)
+        {
+            <p class="dc-muted">Your account has no permissions that could be delegated to a key.</p>
+        }
+        else
+        {
+            <div class="dc-form-grid">
+                <label class="dc-field">
+                    <span class="dc-label">Name</span>
+                    <input class="dc-input" type="text" placeholder="e.g. Claude Code, nightly import" @bind="_name" @bind:event="oninput" disabled="@_busy" />
+                </label>
+                <label class="dc-field">
+                    <span class="dc-label">Expires</span>
+                    <select class="dc-input" @bind="_expiry" disabled="@_busy">
+                        <option value="never">Never</option>
+                        <option value="30">In 30 days</option>
+                        <option value="90">In 90 days</option>
+                        <option value="365">In 1 year</option>
+                    </select>
+                </label>
+            </div>
+
+            <div class="dc-field">
+                <span class="dc-label">Scopes</span>
+                <label class="dc-check dc-check-all">
+                    <input type="checkbox" checked="@_allScopes" @onchange="e => ToggleAll(e.Value is true)" disabled="@_busy" />
+                    <span><strong>Everything I can do</strong> <code>*</code> <small class="dc-muted">— the key follows your permissions, including future changes</small></span>
+                </label>
+                @if (!_allScopes)
+                {
+                    <div class="dc-scope-grid">
+                        @foreach (var scope in _grantable)
+                        {
+                            <label class="dc-check" @key="scope.Id" title="@scope.Description">
+                                <input type="checkbox" checked="@_scopes.Contains(scope.Id)" @onchange="e => Toggle(scope.Id, e.Value is true)" disabled="@_busy" />
+                                <span>@scope.Title <code>@scope.Id</code>@if (scope.AdminOnly) { <span class="dc-badge dc-badge-muted">admin</span> }</span>
+                            </label>
+                        }
+                    </div>
+                }
+            </div>
+
+            @if (_error is not null)
+            {
+                <div class="dc-alert dc-alert-error"><Icon Name="alert" Size="15" /> <span>@_error</span></div>
+            }
+
+            <div class="dc-inline">
+                <button type="button" class="dc-btn dc-btn-primary" @onclick="CreateAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_name) || (!_allScopes && _scopes.Count == 0))">
+                    @if (_busy) { <span class="dc-spinner"></span> } else { <Icon Name="lock" Size="14" /> }
+                    <span>Create key</span>
+                </button>
+                <span class="dc-muted">A key can never do more than the account that created it.</span>
+            </div>
+        }
+    </div>
+
+    <div class="dc-card dc-card-flush">
+        <div class="dc-card-head">
+            <h3><Icon Name="list" Size="16" /> @(_showAll ? "All API keys" : "Your API keys")</h3>
+            <div class="dc-inline">
+                @if (_isAdmin)
+                {
+                    <label class="dc-check"><input type="checkbox" @bind="_showAll" @bind:after="LoadAsync" /> <span>Show every user's keys</span></label>
+                }
+                <button type="button" class="dc-btn dc-btn-ghost dc-btn-sm" @onclick="LoadAsync" title="Refresh"><Icon Name="refresh" Size="14" /></button>
+            </div>
+        </div>
+        @if (_keys is null)
+        {
+            <div class="dc-loading" style="padding:24px"><span class="dc-spinner"></span> Loading…</div>
+        }
+        else if (_keys.Count == 0)
+        {
+            <div class="dc-empty"><Icon Name="lock" Size="28" /><p>No API keys yet.</p></div>
+        }
+        else
+        {
+            <div class="dc-table-wrap">
+                <table class="dc-table">
+                    <thead><tr><th>Name</th><th>Key</th>@if (_showAll) { <th>User</th> }<th>Scopes</th><th>Created</th><th>Last used</th><th>Status</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var k in _keys)
+                        {
+                            <tr @key="k.Id" class="@(k.IsActive ? null : "dc-muted")">
+                                <td><strong>@k.Name</strong></td>
+                                <td><code>@k.Prefix…</code></td>
+                                @if (_showAll) { <td>@k.UserName</td> }
+                                <td class="dc-scopes">
+                                    @if (k.Scopes.Contains(ApiScopes.All))
+                                    {
+                                        <span class="dc-badge dc-badge-info">everything</span>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var s in k.Scopes) { <code>@s</code> }
+                                    }
+                                </td>
+                                <td title="@k.CreatedAt.ToString("u")">@k.CreatedAt.ToLocalTime().ToString("g")</td>
+                                <td>@(k.LastUsedAt is null ? "never" : k.LastUsedAt.Value.ToLocalTime().ToString("g"))</td>
+                                <td>
+                                    @if (k.IsRevoked) { <span class="dc-badge dc-badge-muted">Revoked</span> }
+                                    else if (k.IsExpired) { <span class="dc-badge dc-badge-warn">Expired</span> }
+                                    else if (k.ExpiresAt is not null) { <span class="dc-badge dc-badge-success" title="@k.ExpiresAt.Value.ToString("u")">Expires @k.ExpiresAt.Value.ToLocalTime().ToString("d")</span> }
+                                    else { <span class="dc-badge dc-badge-success">Active</span> }
+                                </td>
+                                <td class="dc-table-actions">
+                                    @if (!k.IsRevoked)
+                                    {
+                                        <button type="button" class="dc-btn dc-btn-sm dc-btn-danger-ghost" @onclick="() => _revoking = k"><Icon Name="x" Size="14" /> Revoke</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</div>
+
+@if (_revoking is not null)
+{
+    <ConfirmDialog Title="Revoke API key"
+                   Message="@($"Revoke \"{_revoking.Name}\" ({_revoking.Prefix}…)? Anything using it stops working immediately. This cannot be undone.")"
+                   ConfirmText="Revoke" Danger="true"
+                   OnConfirm="RevokeAsync" OnCancel="() => _revoking = null" />
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private DynCmsApiOptions Api => Options.Value.Api;
+    private string Origin => Nav.BaseUri.TrimEnd('/');
+    private string ApiUrl => Origin + "/" + Api.BasePath.Trim('/');
+    private string OpenApiUrl => ApiUrl + "/openapi.json";
+    private string McpUrl => Origin + "/" + Api.McpPath.Trim('/');
+
+    private CmsCaller? _caller;
+    private bool _isAdmin;
+    private IReadOnlyList<ApiScopeDefinition> _grantable = [];
+    private IReadOnlyList<ApiKey>? _keys;
+    private bool _showAll;
+
+    private string _name = string.Empty;
+    private string _expiry = "never";
+    private bool _allScopes = true;
+    private readonly HashSet<string> _scopes = new(StringComparer.OrdinalIgnoreCase);
+    private bool _busy;
+    private string? _error;
+    private string? _secret;
+    private string? _secretName;
+    private ApiKey? _revoking;
+    private IJSObjectReference? _module;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthState is not null)
+        {
+            var state = await AuthState;
+            _caller = CmsCaller.From(state.User);
+        }
+        _isAdmin = _caller?.IsAdmin == true;
+        _grantable = CmsAuthorization.GrantableScopes(Identity, _caller);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_caller is null) { _keys = []; return; }
+        try
+        {
+            _keys = _showAll && _isAdmin ? await Keys.GetAllAsync() : await Keys.GetForUserAsync(_caller.UserId);
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex, "Could not load API keys");
+            _keys = [];
+        }
+    }
+
+    private void ToggleAll(bool on)
+    {
+        _allScopes = on;
+        if (!on && _scopes.Count == 0)
+        {
+            foreach (var s in _grantable.Where(s => !s.AdminOnly)) _scopes.Add(s.Id);
+        }
+    }
+
+    private void Toggle(string scope, bool on)
+    {
+        if (on) _scopes.Add(scope); else _scopes.Remove(scope);
+    }
+
+    private async Task CreateAsync()
+    {
+        if (_caller is null) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            DateTime? expires = _expiry == "never" ? null : DateTime.UtcNow.AddDays(int.Parse(_expiry));
+            var scopes = _allScopes ? [ApiScopes.All] : _scopes.ToList();
+            var created = await Keys.CreateAsync(_caller.UserId, _caller.UserName, _name, scopes, expires);
+            _secret = created.Secret;
+            _secretName = created.Key.Name;
+            _name = string.Empty;
+            Toasts.Success("API key created", "Copy the secret now; it will not be shown again.");
+            await LoadAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            _error = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex, "Could not create the key");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task RevokeAsync()
+    {
+        if (_revoking is null) return;
+        var key = _revoking;
+        _revoking = null;
+        try
+        {
+            await Keys.RevokeAsync(key.Id);
+            Toasts.Success("API key revoked", key.Name);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex, "Could not revoke the key");
+        }
+    }
+
+    private async Task CopyAsync(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+        try
+        {
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./_content/DynCMS.UI/dyncms-admin.js");
+            await _module.InvokeVoidAsync("copyText", text);
+            Toasts.Success("Copied to clipboard");
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex, "Could not copy");
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_module is not null)
+        {
+            try { await _module.DisposeAsync(); } catch (JSDisconnectedException) { }
+        }
+    }
+}

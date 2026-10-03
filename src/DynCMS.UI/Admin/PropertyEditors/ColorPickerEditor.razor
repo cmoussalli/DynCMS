@@ -1,0 +1,12 @@
+@namespace DynCMS.UI.Admin.PropertyEditors
+@inherits PropertyEditorBase
+
+<div class="dc-inline">
+    <input type="color" class="dc-color-swatch" value="@(Value ?? "#000000")" @onchange="e => SetValueAsync(e.Value?.ToString())" />
+    <input id="@InputId" class="@InputClass dc-input-narrow" type="text" placeholder="#RRGGBB" value="@Value" maxlength="7"
+           @onchange="e => SetValueAsync(string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value?.ToString())" />
+    @if (!string.IsNullOrEmpty(Value))
+    {
+        <button type="button" class="dc-btn dc-btn-ghost" title="Clear" @onclick="() => SetValueAsync(null)"><Icon Name="x" Size="14" /></button>
+    }
+</div>

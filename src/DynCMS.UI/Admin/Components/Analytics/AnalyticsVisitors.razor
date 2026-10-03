@@ -1,0 +1,243 @@
+@namespace DynCMS.UI.Admin.Components.Analytics
+@using DynCMS.Core.Analytics
+@inject IAnalyticsService Analytics
+@inject NavigationManager Nav
+@implements IDisposable
+
+<div class="dc-an-view">
+    <div class="dc-an-toolbar">
+        <div class="dc-search dc-an-search">
+            <Icon Name="search" Size="15" />
+            <input class="dc-input" type="search" placeholder="Search path, title, IP, city, country, referrer, browser…" @bind="_search" @bind:event="oninput" @bind:after="ReloadAsync" />
+        </div>
+        <label class="dc-check" title="Include crawlers and scripts"><input type="checkbox" @bind="_bots" @bind:after="ReloadAsync" /> <span>Bots</span></label>
+        <label class="dc-check" title="Only requests for pages that do not exist"><input type="checkbox" @bind="_notFound" @bind:after="ReloadAsync" /> <span>404 only</span></label>
+        <label class="dc-check dc-an-live-toggle" title="Reload every 10 seconds"><input type="checkbox" @bind="_live" @bind:after="ToggleLive" /> <span><span class="dc-an-pulse @(_live ? null : "dc-an-pulse-off")"></span> Live</span></label>
+        <button type="button" class="dc-btn dc-btn-sm" @onclick="ReloadAsync" disabled="@_loading" title="Refresh"><Icon Name="refresh" Size="13" /></button>
+        <span class="dc-muted dc-an-total">@AnalyticsFormat.Number(_total) view@(_total == 1 ? "" : "s")</span>
+    </div>
+
+    @if (HasFilters)
+    {
+        <div class="dc-an-filters">
+            <span class="dc-muted">Filtered by</span>
+            @if (Path is not null) { <button type="button" class="dc-chip" @onclick="@(() => ClearFilter("path"))"><Icon Name="document" Size="12" /> <code>@Path</code> <Icon Name="x" Size="12" /></button> }
+            @if (Visitor is not null) { <button type="button" class="dc-chip" @onclick="@(() => ClearFilter("visitor"))"><Icon Name="user" Size="12" /> visitor @Visitor <Icon Name="x" Size="12" /></button> }
+            @if (Session is not null) { <button type="button" class="dc-chip" @onclick="@(() => ClearFilter("session"))"><Icon Name="activity" Size="12" /> session @Session <Icon Name="x" Size="12" /></button> }
+            @if (Ip is not null) { <button type="button" class="dc-chip" @onclick="@(() => ClearFilter("ip"))"><Icon Name="server" Size="12" /> @Ip <Icon Name="x" Size="12" /></button> }
+            @if (Country is not null) { <button type="button" class="dc-chip" @onclick="@(() => ClearFilter("country"))">@AnalyticsFormat.Flag(Country) @AnalyticsFormat.CountryName(Country) <Icon Name="x" Size="12" /></button> }
+            <a class="dc-link" href="/admin/analytics/visitors">Clear all</a>
+        </div>
+    }
+
+    @if (_error is not null)
+    {
+        <div class="dc-alert dc-alert-error"><Icon Name="alert" Size="15" /> <span>@_error</span></div>
+    }
+    else if (_loading && _rows.Count == 0)
+    {
+        <div class="dc-loading"><span class="dc-spinner"></span> Loading page views…</div>
+    }
+    else if (_rows.Count == 0)
+    {
+        <div class="dc-an-empty dc-card">
+            <Icon Name="eye" Size="26" />
+            <span>No page views match. Views appear here a moment after a visitor opens a page on the site.</span>
+        </div>
+    }
+    else
+    {
+        <div class="dc-table-wrap">
+            <table class="dc-table dc-an-table dc-an-log">
+                <thead>
+                    <tr>
+                        <th>When</th>
+                        <th>Page</th>
+                        <th>Visitor</th>
+                        <th>Client</th>
+                        <th>Source</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var v in _rows)
+                    {
+                        <tr class="@(v.IsBot ? "dc-an-bot" : null)">
+                            <td class="dc-an-when" title="@AnalyticsFormat.Local(v.VisitedAt)">
+                                <span>@AnalyticsFormat.Ago(v.VisitedAt)</span>
+                                <small>@v.VisitedAt.ToLocalTime().ToString("HH:mm:ss")</small>
+                            </td>
+                            <td>
+                                <div class="dc-an-page">
+                                    <a href="@FilterLink(path: v.Path)" title="Only this page"><code>@v.Path@(v.Query is null ? "" : "?" + v.Query)</code></a>
+                                    @if (v.NotFound) { <span class="dc-badge dc-badge-warn">404</span> }
+                                    @if (!string.IsNullOrEmpty(v.Title)) { <small>@v.Title@(v.Culture is null ? "" : $" · {v.Culture}")</small> }
+                                </div>
+                            </td>
+                            <td>
+                                <div class="dc-an-visitor">
+                                    <span class="dc-an-place" title="@AnalyticsFormat.Place(v.City, v.Region, v.Country, v.CountryCode)">
+                                        <span class="dc-an-flag">@AnalyticsFormat.Flag(v.CountryCode)</span>
+                                        @if (v.CountryCode is null)
+                                        {
+                                            <span class="dc-muted">@(v.IpAddress is not null && IpAddressHelper.IsPrivate(v.IpAddress) ? "Local network" : v.GeoResolved ? "Unknown location" : "Locating…")</span>
+                                        }
+                                        else
+                                        {
+                                            <a href="@FilterLink(country: v.CountryCode)">@AnalyticsFormat.Place(v.City, v.Region, null, v.CountryCode)</a>
+                                        }
+                                    </span>
+                                    <small>
+                                        @if (v.IpAddress is not null) { <a class="dc-mono" href="@FilterLink(ip: v.IpAddress)" title="All views from this address">@v.IpAddress</a> }
+                                        else { <span class="dc-muted">IP not stored</span> }
+                                        · <a class="dc-mono" href="@FilterLink(visitor: v.VisitorId)" title="This visitor's journey">@v.VisitorId[..Math.Min(8, v.VisitorId.Length)]</a>
+                                        @if (v.Language is not null) { <span class="dc-muted"> · @v.Language</span> }
+                                    </small>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="dc-an-client" title="@v.UserAgent">
+                                    <span><Icon Name="@AnalyticsFormat.DeviceIcon(v.DeviceType)" Size="14" /> @v.Browser @v.BrowserVersion</span>
+                                    <small>@v.OperatingSystem · @v.DeviceType@(v.IsBot ? " · bot" : "")</small>
+                                </div>
+                            </td>
+                            <td>
+                                @{
+                                    var internalRef = v.ReferrerHost is not null && v.Host.Contains(v.ReferrerHost, StringComparison.OrdinalIgnoreCase);
+                                    var channel = internalRef ? ReferrerChannels.Internal : ReferrerChannels.Classify(v.ReferrerHost);
+                                }
+                                <div class="dc-an-source" title="@v.Referrer">
+                                    <span class="dc-badge @AnalyticsFormat.ChannelClass(channel)">@channel</span>
+                                    @if (v.ReferrerHost is not null && !internalRef) { <small>@v.ReferrerHost</small> }
+                                    else if (internalRef && v.Referrer is not null) { <small>@InternalPath(v.Referrer)</small> }
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (_rows.Count < _total)
+            {
+                <div class="dc-an-more">
+                    <button type="button" class="dc-btn" @onclick="LoadMoreAsync" disabled="@_loading">
+                        @if (_loading) { <span class="dc-spinner"></span> } else { <Icon Name="arrow-down" Size="14" /> }
+                        <span>Load more (@AnalyticsFormat.Number(_total - _rows.Count) remaining)</span>
+                    </button>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private const int PageSize = 50;
+
+    [Parameter] public AnalyticsRange Range { get; set; } = AnalyticsRange.LastDays(30);
+    [Parameter] public string? Path { get; set; }
+    [Parameter] public string? Visitor { get; set; }
+    [Parameter] public string? Session { get; set; }
+    [Parameter] public string? Ip { get; set; }
+    [Parameter] public string? Country { get; set; }
+
+    private string? _loadedKey;
+    private List<PageView> _rows = [];
+    private long _total;
+    private string _search = string.Empty;
+    private bool _bots, _notFound, _live, _loading;
+    private string? _error;
+    private Timer? _timer;
+
+    private bool HasFilters => Path is not null || Visitor is not null || Session is not null || Ip is not null || Country is not null;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var key = $"{Range.From:O}|{Range.To:O}|{Path}|{Visitor}|{Session}|{Ip}|{Country}";
+        if (key == _loadedKey) return;
+        _loadedKey = key;
+        await ReloadAsync();
+    }
+
+    private AnalyticsViewFilter Filter(int skip) =>
+        new(Range, Path, Visitor, Session, Ip, Country, _search, _notFound, _bots, skip, PageSize);
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            var page = await Analytics.GetViewsAsync(Filter(0));
+            _rows = page.Items.ToList();
+            _total = page.Total;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadMoreAsync()
+    {
+        _loading = true;
+        try
+        {
+            var page = await Analytics.GetViewsAsync(Filter(_rows.Count));
+            var known = _rows.Select(r => r.Id).ToHashSet();
+            _rows.AddRange(page.Items.Where(i => !known.Contains(i.Id)));
+            _total = page.Total;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void ToggleLive()
+    {
+        _timer?.Dispose();
+        _timer = null;
+        if (_live)
+        {
+            _timer = new Timer(async _ =>
+            {
+                try
+                {
+                    await ReloadAsync();
+                    await InvokeAsync(StateHasChanged);
+                }
+                catch { /* circuit gone or database busy; next tick retries */ }
+            }, null, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
+        }
+    }
+
+    private void ClearFilter(string which) => Nav.NavigateTo(FilterLink(clear: which));
+
+    /// <summary>The log URL with the current filters, one of them replaced or cleared.</summary>
+    private string FilterLink(string? path = null, string? visitor = null, string? ip = null, string? country = null, string? clear = null)
+    {
+        var query = new List<string>();
+        Add("path", path ?? (clear == "path" ? null : Path));
+        Add("visitor", visitor ?? (clear == "visitor" ? null : Visitor));
+        Add("session", clear == "session" ? null : Session);
+        Add("ip", ip ?? (clear == "ip" ? null : Ip));
+        Add("country", country ?? (clear == "country" ? null : Country));
+        return "/admin/analytics/visitors" + (query.Count == 0 ? string.Empty : "?" + string.Join("&", query));
+
+        void Add(string name, string? value)
+        {
+            if (!string.IsNullOrEmpty(value)) query.Add($"{name}={Uri.EscapeDataString(value)}");
+        }
+    }
+
+    private static string InternalPath(string referrer) =>
+        Uri.TryCreate(referrer, UriKind.Absolute, out var uri) ? uri.PathAndQuery : referrer;
+
+    public void Dispose() => _timer?.Dispose();
+}

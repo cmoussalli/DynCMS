@@ -1,0 +1,255 @@
+@namespace DynCMS.UI.Admin.Components
+@using DynCMS.Core.Data
+@inject IDatabaseMaintenanceService Maintenance
+@inject DatabaseConfigurationStore Store
+@inject ToastService Toasts
+
+<div class="dc-page dc-data-section">
+    <header class="dc-page-head dc-page-head-row">
+        <div>
+            <h1><Icon Name="database" Size="22" /> Database</h1>
+            <p class="dc-muted">Where DynCMS keeps its content, media records and users. Configure, back up and restore it from here.</p>
+        </div>
+        <button type="button" class="dc-btn" @onclick="LoadAsync" disabled="@_loading" title="Refresh"><Icon Name="refresh" Size="14" /> Refresh</button>
+    </header>
+
+    @if (_loading && _info is null)
+    {
+        <div class="dc-loading"><span class="dc-spinner"></span> Reading database information…</div>
+    }
+    else if (_error is not null)
+    {
+        <div class="dc-alert dc-alert-error"><Icon Name="alert" Size="15" /> <span>@_error</span></div>
+    }
+    else if (_info is not null)
+    {
+        <div class="dc-stats">
+            <div class="dc-stat"><span class="dc-stat-tile"><Icon Name="@(_info.Provider == DatabaseProvider.SqlServer ? "server" : "file")" Size="20" /></span><strong style="font-size:20px">@ProviderName</strong><span>Engine</span></div>
+            <div class="dc-stat dc-stat-green"><span class="dc-stat-tile"><Icon Name="check-circle" Size="20" /></span><strong style="font-size:20px">@(_info.IsReady ? "Ready" : "Not ready")</strong><span>Status</span></div>
+            <div class="dc-stat dc-stat-violet"><span class="dc-stat-tile"><Icon Name="layers" Size="20" /></span><strong>@_info.Tables.Count</strong><span>Tables</span></div>
+            @if (_info.Provider == DatabaseProvider.Sqlite)
+            {
+                <div class="dc-stat dc-stat-amber"><span class="dc-stat-tile"><Icon Name="hard-drive" Size="20" /></span><strong style="font-size:20px">@DataFormat.Bytes(_info.SqliteFileSize)</strong><span>On disk</span></div>
+            }
+            <a class="dc-stat dc-stat-teal" href="/admin/data/backups"><span class="dc-stat-tile"><Icon Name="save" Size="20" /></span><strong>@(_backups?.Count ?? 0)</strong><span>Backups</span></a>
+        </div>
+
+        <div class="dc-dash-grid">
+            <div class="dc-dash-col">
+                <section class="dc-card">
+                    <div class="dc-card-head">
+                        <h3><Icon Name="sliders" Size="16" /> Connection</h3>
+                        <a href="/admin/data/configuration">Edit configuration <Icon Name="arrow-right" Size="13" /></a>
+                    </div>
+                    <dl class="dc-data-kv">
+                        <dt>Engine</dt><dd>@ProviderName</dd>
+                        @if (_info.Provider == DatabaseProvider.Sqlite)
+                        {
+                            <dt>Database file</dt><dd><code>@_info.SqliteFile</code></dd>
+                            <dt>Size</dt><dd>@DataFormat.Bytes(_info.SqliteFileSize) <span class="dc-muted">(including write-ahead log)</span></dd>
+                            <dt>Last written</dt><dd>@(_info.SqliteLastWriteUtc is DateTime w ? $"{DataFormat.Local(w)} · {DataFormat.Ago(w)}" : "—")</dd>
+                        }
+                        else
+                        {
+                            <dt>Server</dt><dd><code>@_info.Server,@_info.Port</code></dd>
+                            <dt>Database</dt><dd><code>@_info.Database</code></dd>
+                            <dt>User</dt><dd>@_info.UserName</dd>
+                            <dt>Certificate</dt><dd>@(_info.TrustServerCertificate == true ? "Self-signed accepted" : "Must be trusted")</dd>
+                        }
+                        <dt>Configuration file</dt>
+                        <dd>
+                            <code>@_info.ConfigurationFile</code>
+                            @if (!_info.ConfigurationFileExists)
+                            {
+                                <span class="dc-badge dc-badge-warn" style="margin-left:8px">Missing on disk</span>
+                            }
+                        </dd>
+                        <dt>Backup folder</dt><dd><code>@_info.BackupFolder</code></dd>
+                    </dl>
+                    <div class="dc-data-actions">
+                        <button type="button" class="dc-btn dc-btn-primary" @onclick="BackupNowAsync" disabled="@_busy">
+                            @if (_busy) { <span class="dc-spinner"></span> } else { <Icon Name="save" Size="14" /> }
+                            <span>Back up now</span>
+                        </button>
+                        <a class="dc-btn" href="/admin/data/backups"><Icon Name="rotate-ccw" Size="14" /> Backups &amp; restore</a>
+                    </div>
+                </section>
+
+                <section class="dc-card dc-card-flush">
+                    <div class="dc-card-head" style="padding:16px 22px 0">
+                        <h3><Icon Name="layers" Size="16" /> Tables</h3>
+                        <span class="dc-muted" style="font-size:13px">@(Store.IsAnalyticsSeparate ? "Content and identity tables; analytics has its own database" : "Content, identity and analytics tables share this database")</span>
+                    </div>
+                    @if (_info.TablesError is not null)
+                    {
+                        <div class="dc-alert dc-alert-warn" style="margin:12px 22px"><Icon Name="alert" Size="15" /> <span>@_info.TablesError</span></div>
+                    }
+                    else if (_info.Tables.Count == 0)
+                    {
+                        <div class="dc-empty"><Icon Name="layers" Size="28" /><p>No tables were found.</p></div>
+                    }
+                    else
+                    {
+                        <table class="dc-table">
+                            <thead><tr><th>Table</th><th class="dc-num">Rows</th></tr></thead>
+                            <tbody>
+                                @foreach (var t in _info.Tables)
+                                {
+                                    <tr @key="t.Name"><td><code>@t.Name</code></td><td class="dc-num">@DataFormat.Rows(t.Rows)</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </section>
+            </div>
+
+            <div class="dc-dash-col">
+                <section class="dc-card">
+                    <div class="dc-card-head">
+                        <h3><Icon Name="clock" Size="16" /> Latest backups</h3>
+                        <a href="/admin/data/backups">All backups <Icon Name="arrow-right" Size="13" /></a>
+                    </div>
+                    @if (_backups is null || _backups.Count == 0)
+                    {
+                        <div class="dc-empty">
+                            <Icon Name="save" Size="28" />
+                            <p>No backups yet. Take one before you change document types or restore content.</p>
+                            <button type="button" class="dc-btn dc-btn-sm dc-btn-primary" @onclick="BackupNowAsync" disabled="@_busy"><Icon Name="save" Size="14" /> Create first backup</button>
+                        </div>
+                    }
+                    else
+                    {
+                        <ul class="dc-recent">
+                            @foreach (var b in _backups.Take(5))
+                            {
+                                <li @key="b.FileName">
+                                    <span class="dc-recent-tile"><Icon Name="@(b.Provider == DatabaseProvider.SqlServer ? "server" : "file")" Size="16" /></span>
+                                    <span class="dc-recent-text">
+                                        <a href="/admin/data/backups" title="@b.FullPath">@b.FileName</a>
+                                        <small>@DataFormat.Bytes(b.Size) · @DataFormat.Ago(b.CreatedUtc)</small>
+                                    </span>
+                                    @if (!b.IsLocalFile)
+                                    {
+                                        <span class="dc-badge dc-badge-muted" title="The file lives on the SQL Server">Remote</span>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    }
+                </section>
+
+                <section class="dc-card">
+                    <div class="dc-card-head">
+                        <h3><Icon Name="bar-chart" Size="16" /> Analytics database</h3>
+                        <a href="/admin/data/analytics">Configure <Icon Name="arrow-right" Size="13" /></a>
+                    </div>
+                    @if (_analytics is null)
+                    {
+                        <p class="dc-muted" style="font-size:13.5px">Page views are stored in the primary database above. Move them to a database of their own to keep the history out of content backups and restores.</p>
+                    }
+                    else
+                    {
+                        <dl class="dc-data-kv">
+                            <dt>Engine</dt><dd>@(_analytics.Provider == DatabaseProvider.SqlServer ? "SQL Server" : "SQLite")</dd>
+                            @if (_analytics.Provider == DatabaseProvider.Sqlite)
+                            {
+                                <dt>Database file</dt><dd><code>@_analytics.SqliteFile</code></dd>
+                                <dt>Size</dt><dd>@DataFormat.Bytes(_analytics.SqliteFileSize)</dd>
+                            }
+                            else
+                            {
+                                <dt>Server</dt><dd><code>@_analytics.Server,@_analytics.Port</code></dd>
+                                <dt>Database</dt><dd><code>@_analytics.Database</code></dd>
+                            }
+                            <dt>Page views</dt><dd>@DataFormat.Rows(_analytics.Tables.FirstOrDefault(t => t.Name == "AnalyticsPageViews")?.Rows)</dd>
+                            @if (_leftover is { } leftover)
+                            {
+                                <dt>Old history</dt>
+                                <dd><span class="dc-badge dc-badge-warn">@leftover.PageViews.ToString("N0") page views</span> still in the primary database · <a href="/admin/data/analytics">Move or delete</a></dd>
+                            }
+                            <dt>Backups</dt><dd>@(_analyticsBackups?.Count ?? 0) · <a href="/admin/data/analytics-backups">Analytics backups</a></dd>
+                        </dl>
+                    }
+                </section>
+
+                <section class="dc-card dc-danger-zone">
+                    <h3><Icon Name="alert" Size="16" /> Danger zone</h3>
+                    <p class="dc-muted" style="font-size:13.5px">Remove the configuration file and run the first-run setup again, for example to move to another database.</p>
+                    <div class="dc-data-actions">
+                        <a class="dc-btn dc-btn-danger-ghost" href="/admin/data/reset"><Icon Name="rotate-ccw" Size="14" /> Reset configuration…</a>
+                    </div>
+                </section>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private DatabaseInfo? _info;
+    private DatabaseInfo? _analytics;
+    private DynCMS.Core.Analytics.AnalyticsHistoryInfo? _leftover;
+    private IReadOnlyList<DatabaseBackupInfo>? _backups;
+    private IReadOnlyList<DatabaseBackupInfo>? _analyticsBackups;
+    private bool _loading;
+    private bool _busy;
+    private string? _error;
+
+    private string ProviderName => _info?.Provider == DatabaseProvider.SqlServer ? "SQL Server" : "SQLite";
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _info = await Maintenance.GetInfoAsync();
+            _backups = await Maintenance.ListBackupsAsync();
+            if (Store.IsAnalyticsSeparate)
+            {
+                _analytics = await Maintenance.GetInfoAsync(DatabaseRole.Analytics);
+                _analyticsBackups = await Maintenance.ListBackupsAsync(DatabaseRole.Analytics);
+                _leftover = await Maintenance.GetLeftoverAnalyticsAsync();
+                if (_leftover is { IsEmpty: true }) _leftover = null;
+            }
+            else
+            {
+                _analytics = null;
+                _analyticsBackups = null;
+                _leftover = null;
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task BackupNowAsync()
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            var backup = await Maintenance.CreateBackupAsync("Created from the overview");
+            Toasts.Success("Backup created", backup.FileName);
+            _backups = await Maintenance.ListBackupsAsync();
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            Toasts.Error(ex, "Backup failed");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

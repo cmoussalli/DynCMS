@@ -1,0 +1,14 @@
+@namespace DynCMS.UI.Admin.PropertyEditors
+@inherits PropertyEditorBase
+
+<label class="dc-toggle">
+    <input id="@InputId" type="checkbox" checked="@IsOn" @onchange="OnToggle" />
+    <span class="dc-toggle-track"><span class="dc-toggle-thumb"></span></span>
+    <span class="dc-toggle-label">@(Config("label") ?? (IsOn ? "Yes" : "No"))</span>
+</label>
+
+@code {
+    private bool IsOn => ContentValueConverter.Convert<bool>(Value);
+
+    private Task OnToggle(ChangeEventArgs e) => SetValueAsync(e.Value is true ? "true" : "false");
+}

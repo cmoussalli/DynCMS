@@ -1,0 +1,584 @@
+@namespace DynCMS.UI.Admin.Components
+@inject IContentService Content
+@inject IPublishedContentQuery Published
+@inject ILanguageService Languages
+@inject IPropertyEditorRegistry Editors
+@inject ITemplateRegistry Templates
+@inject ToastService Toasts
+@inject NavigationManager Nav
+
+@if (_node is null)
+{
+    <div class="dc-workspace-empty">
+        @if (_loading)
+        {
+            <div class="dc-loading"><span class="dc-spinner"></span> Loading…</div>
+        }
+        else
+        {
+            <span class="dc-empty-tile"><Icon Name="alert" Size="32" /></span>
+            <h2>Content not found</h2>
+            <p>It may have been deleted or moved.</p>
+        }
+    </div>
+}
+else
+{
+    <div class="dc-editor">
+        <header class="dc-editor-head">
+            <div class="dc-editor-title">
+                <span class="dc-editor-type" title="Document type"><Icon Name="@_node.ContentType.Icon" Size="16" /> @_node.ContentType.Name</span>
+                @if (Varies)
+                {
+                    <span class="dc-editor-type dc-editor-type-lang" title="This document type varies by language"><Icon Name="globe" Size="14" /> @(_currentLanguage?.Name ?? _culture)</span>
+                }
+                <input class="dc-editor-name @(HasError("name") ? "dc-invalid" : null)" type="text" value="@_node.GetName(CultureKey)"
+                       placeholder="@(Varies && !CultureExists ? $"Enter a name in {_currentLanguage?.Name ?? _culture}…" : "Enter a name…")" @oninput="OnNameInput" />
+            </div>
+            <div class="dc-editor-status">
+                @if (Varies && _languages.Count > 0)
+                {
+                    <div class="dc-lang-switch" title="Language being edited">
+                        <Icon Name="globe" Size="14" />
+                        <select class="dc-input dc-lang-select" value="@_culture" @onchange="OnCultureChanged">
+                            @foreach (var l in _languages)
+                            {
+                                <option value="@l.IsoCode" selected="@(l.Is(_culture))">@l.Name (@l.IsoCode) · @StateLabel(l)</option>
+                            }
+                        </select>
+                    </div>
+                }
+                @if (Varies && !CultureExists)
+                {
+                    <span class="dc-badge dc-badge-muted">Not created in this language</span>
+                }
+                else if (!_node.IsPublishedIn(CultureKey))
+                {
+                    <span class="dc-badge dc-badge-muted">Unpublished</span>
+                }
+                else if (_dirty || _node.HasPendingChangesIn(CultureKey))
+                {
+                    <span class="dc-badge dc-badge-warn">Published · pending changes</span>
+                }
+                else
+                {
+                    <span class="dc-badge dc-badge-success">Published</span>
+                }
+                @if (_dirty)
+                {
+                    <span class="dc-badge dc-badge-info">Unsaved</span>
+                }
+            </div>
+        </header>
+
+        <nav class="dc-tabs">
+            @foreach (var g in _groups)
+            {
+                <button type="button" class="@(g == _tab ? "dc-active" : null) @(GroupHasErrors(g) ? "dc-tab-error" : null)" @onclick="() => _tab = g">@g</button>
+            }
+            <button type="button" class="@(_tab == InfoTab ? "dc-active" : null)" @onclick="() => _tab = InfoTab"><Icon Name="info" Size="14" /> Info</button>
+        </nav>
+
+        <div class="dc-editor-body">
+            @if (_cultureErrors.Count > 0)
+            {
+                <div class="dc-alert dc-alert-warn">
+                    <Icon Name="alert" Size="14" />
+                    <span>
+                        Other languages need attention before publishing:
+                        @foreach (var (iso, errors) in _cultureErrors)
+                        {
+                            <button type="button" class="dc-link" @onclick="() => SwitchCulture(iso)">@(LanguageName(iso)) (@errors.Count)</button>
+                        }
+                    </span>
+                </div>
+            }
+            @if (_tab == InfoTab)
+            {
+                <div class="dc-info-grid">
+                    <div class="dc-info-card">
+                        <h4>Links</h4>
+                        <dl>
+                            <dt>URL</dt>
+                            <dd>
+                                @if (_url is null)
+                                {
+                                    <span class="dc-muted">Not available</span>
+                                }
+                                else if (_node.IsPublishedIn(CultureKey))
+                                {
+                                    <a href="@_url" target="_blank" rel="noopener">@_url <Icon Name="external" Size="12" /></a>
+                                }
+                                else
+                                {
+                                    <span class="dc-muted">@_url (not published)</span>
+                                }
+                            </dd>
+                            <dt>Preview</dt>
+                            <dd><a href="@PreviewUrl" target="_blank" rel="noopener">Open preview <Icon Name="eye" Size="12" /></a></dd>
+                            <dt>URL segment</dt>
+                            <dd><input class="dc-input dc-input-narrow" type="text" value="@_node.GetUrlSegment(CultureKey)" @onchange="OnSegmentChanged" /></dd>
+                        </dl>
+                        @if (Varies && _languages.Count > 1)
+                        {
+                            <h4 class="dc-mt">Languages</h4>
+                            <table class="dc-lang-table">
+                                <tbody>
+                                    @foreach (var l in _languages)
+                                    {
+                                        var state = _node.GetCulture(l.IsoCode);
+                                        <tr @key="l.IsoCode">
+                                            <td><button type="button" class="dc-link" @onclick="() => SwitchCulture(l.IsoCode)">@l.Name</button> <code class="dc-alias">@l.IsoCode</code></td>
+                                            <td>
+                                                @if (state is not { Exists: true })
+                                                {
+                                                    <span class="dc-badge dc-badge-muted">Not created</span>
+                                                }
+                                                else if (!state.IsPublished)
+                                                {
+                                                    <span class="dc-badge dc-badge-muted">Draft</span>
+                                                }
+                                                else if (state.HasPendingChanges)
+                                                {
+                                                    <span class="dc-badge dc-badge-warn">Pending</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="dc-badge dc-badge-success">Published</span>
+                                                }
+                                            </td>
+                                            <td class="dc-muted">
+                                                @if (state is { IsPublished: true } && _cultureUrls.TryGetValue(l.IsoCode, out var cu))
+                                                {
+                                                    <a href="@cu" target="_blank" rel="noopener">@cu</a>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+                    </div>
+                    <div class="dc-info-card">
+                        <h4>Template</h4>
+                        <select class="dc-input" value="@(_node.TemplateAlias ?? string.Empty)" @onchange="OnTemplateChanged">
+                            <option value="">— None —</option>
+                            @foreach (var t in AvailableTemplates)
+                            {
+                                <option value="@t.Alias" selected="@(t.Alias == _node.TemplateAlias)">@t.Name (@t.Alias)</option>
+                            }
+                        </select>
+                        @if (!string.IsNullOrEmpty(_node.TemplateAlias) && Templates.Get(_node.TemplateAlias) is null)
+                        {
+                            <p class="dc-error">Template "@_node.TemplateAlias" is not registered in the application.</p>
+                        }
+                        @if (Varies)
+                        {
+                            <small class="dc-muted">The template is shared by every language.</small>
+                        }
+                        <h4 class="dc-mt">Sort order</h4>
+                        <div class="dc-inline">
+                            <button type="button" class="dc-btn dc-btn-sm" @onclick="() => MoveAsync(-1)"><Icon Name="arrow-up" Size="14" /> Move up</button>
+                            <button type="button" class="dc-btn dc-btn-sm" @onclick="() => MoveAsync(1)"><Icon Name="arrow-down" Size="14" /> Move down</button>
+                        </div>
+                    </div>
+                    <div class="dc-info-card">
+                        <h4>History</h4>
+                        <dl>
+                            <dt>Document type</dt><dd><a href="/admin/settings/document-types/@_node.ContentTypeId">@_node.ContentType.Name</a></dd>
+                            <dt>Created</dt><dd>@_node.CreatedAt.ToLocalTime().ToString("g")</dd>
+                            <dt>Last edited</dt><dd>@LastEdited.ToLocalTime().ToString("g")</dd>
+                            <dt>Published</dt><dd>@(LastPublished?.ToLocalTime().ToString("g") ?? "—")</dd>
+                            <dt>Id</dt><dd><code>@_node.Id</code></dd>
+                        </dl>
+                    </div>
+                </div>
+            }
+            else
+            {
+                var props = _node.ContentType.Properties.Where(p => GroupOf(p) == _tab).OrderBy(p => p.SortOrder).ToList();
+                if (props.Count == 0)
+                {
+                    <div class="dc-sheet dc-empty">
+                        <Icon Name="sliders" Size="26" />
+                        <p>This document type has no properties in this group.</p>
+                        <a class="dc-btn dc-btn-sm" href="/admin/settings/document-types/@_node.ContentTypeId">Edit document type</a>
+                    </div>
+                }
+                else
+                {
+                <div class="dc-sheet">
+                @foreach (var p in props)
+                {
+                    var editor = Editors.Get(p.EditorAlias);
+                    var error = ErrorFor(p);
+                    var varies = Varies && p.VariesByCulture;
+                    <div class="dc-property @(error is not null ? "dc-property-invalid" : null)" @key="@($"{p.Id}|{(varies ? _culture : "*")}")">
+                        <div class="dc-property-label">
+                            <label for="dc-prop-@p.Alias">@p.Name @if (p.Mandatory) { <span class="dc-required" title="Required">*</span> }</label>
+                            @if (!string.IsNullOrWhiteSpace(p.Description))
+                            {
+                                <small>@p.Description</small>
+                            }
+                            <code class="dc-alias">@p.Alias</code>
+                            @if (Varies)
+                            {
+                                if (varies)
+                                {
+                                    <span class="dc-vary dc-vary-culture" title="Stored per language"><Icon Name="globe" Size="11" /> @(_currentLanguage?.Name ?? _culture)</span>
+                                }
+                                else
+                                {
+                                    <span class="dc-vary dc-vary-shared" title="One value for every language"><Icon Name="link" Size="11" /> Shared</span>
+                                }
+                            }
+                        </div>
+                        <div class="dc-property-editor">
+                            @if (editor?.ComponentType is null)
+                            {
+                                <div class="dc-alert dc-alert-warn"><Icon Name="alert" Size="14" /> Property editor "@p.EditorAlias" is not registered.</div>
+                            }
+                            else
+                            {
+                                <DynamicComponent Type="editor.ComponentType" Parameters="EditorParameters(p, error is not null)" />
+                            }
+                            @if (error is not null)
+                            {
+                                <p class="dc-error"><Icon Name="alert" Size="13" /> @error</p>
+                            }
+                        </div>
+                    </div>
+                }
+                </div>
+                }
+            }
+        </div>
+
+        <footer class="dc-editor-foot">
+            <button type="button" class="dc-btn dc-btn-danger-ghost" @onclick="() => _confirmDelete = true"><Icon Name="trash" Size="14" /> Delete</button>
+            <span class="dc-editor-meta"><Icon Name="clock" Size="13" /> Last edited @LastEdited.ToLocalTime().ToString("g")</span>
+            <span class="dc-spacer"></span>
+            @if (_node.IsPublishedIn(CultureKey))
+            {
+                <button type="button" class="dc-btn" disabled="@_busy" @onclick="UnpublishAsync"><Icon Name="unpublish" Size="14" /> Unpublish@(Varies && _languages.Count > 1 ? $" ({_culture})" : "")</button>
+            }
+            <button type="button" class="dc-btn" disabled="@_busy" @onclick="SaveAsync"><Icon Name="save" Size="14" /> Save</button>
+            <button type="button" class="dc-btn dc-btn-success" disabled="@_busy" @onclick="SaveAndPublishAsync"><Icon Name="publish" Size="14" /> Save &amp; publish@(Varies && _languages.Count > 1 ? "…" : "")</button>
+        </footer>
+    </div>
+
+    @if (_publishOpen)
+    {
+        <PublishDialog Node="_node" Languages="_languages" Current="@_culture" OnPublish="PublishCulturesAsync" OnCancel="() => _publishOpen = false" />
+    }
+
+    @if (_confirmDelete)
+    {
+        <ConfirmDialog Title="Delete content"
+                       Message="@($"Delete \"{_node.GetName(CultureKey)}\" and everything below it? This cannot be undone.")"
+                       ConfirmText="Delete" Danger="true"
+                       OnConfirm="DeleteAsync" OnCancel="() => _confirmDelete = false" />
+    }
+}
+
+@code {
+    private const string InfoTab = "\u0001info";
+
+    [Parameter, EditorRequired] public Guid Id { get; set; }
+    /// <summary>The language to open the editor in (ISO code). The default language when null.</summary>
+    [Parameter] public string? Culture { get; set; }
+    [Parameter] public EventCallback OnChanged { get; set; }
+    [Parameter] public EventCallback OnDeleted { get; set; }
+
+    private ContentNode? _node;
+    private List<string> _groups = [];
+    private string _tab = string.Empty;
+    private string? _url;
+    private Dictionary<string, string> _cultureUrls = new(StringComparer.OrdinalIgnoreCase);
+    private bool _loading = true;
+    private bool _dirty;
+    private bool _busy;
+    private bool _confirmDelete;
+    private bool _publishOpen;
+    private IReadOnlyList<Language> _languages = [];
+    private string _culture = string.Empty;
+    private Language? _currentLanguage;
+    // Validation errors of the language being edited (plus shared ones), keyed by property alias.
+    private Dictionary<string, string> _errors = new(StringComparer.OrdinalIgnoreCase);
+    // Validation errors of the other languages, so the editor can point at them.
+    private Dictionary<string, List<ContentValidationError>> _cultureErrors = new(StringComparer.OrdinalIgnoreCase);
+    private Guid _loadedId;
+
+    private bool Varies => _node?.VariesByCulture == true;
+    private string? CultureKey => Varies ? _culture : null;
+    private bool CultureExists => !Varies || _node?.GetCulture(_culture) is { Exists: true };
+    private string PreviewUrl => $"{_url ?? "/"}?preview=true";
+    private DateTime LastEdited => Varies && _node!.GetCulture(_culture) is { } c && c.UpdatedAt > _node.UpdatedAt ? c.UpdatedAt : _node!.UpdatedAt;
+    private DateTime? LastPublished => Varies ? _node!.GetCulture(_culture)?.PublishedAt : _node!.PublishedAt;
+
+    private IEnumerable<TemplateDefinition> AvailableTemplates
+    {
+        get
+        {
+            var allowed = _node?.ContentType.AllowedTemplateAliases ?? [];
+            var all = Templates.Pages;
+            return allowed.Count == 0 ? all : all.Where(t => allowed.Contains(t.Alias, StringComparer.OrdinalIgnoreCase));
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedId == Id && _node is not null) return;
+        _loadedId = Id;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _node = await Content.GetAsync(Id);
+        _dirty = false;
+        _errors.Clear();
+        _cultureErrors.Clear();
+        if (_node is not null)
+        {
+            _languages = await Languages.GetAllAsync();
+            var wanted = _languages.Match(Culture) ?? _languages.Match(_culture) ?? _languages.Default();
+            _culture = wanted?.IsoCode ?? string.Empty;
+            _currentLanguage = wanted;
+            _groups = _node.ContentType.Groups.ToList();
+            if (_groups.Count == 0) _groups = ["Content"];
+            if (_tab != InfoTab && !_groups.Contains(_tab, StringComparer.OrdinalIgnoreCase)) _tab = _groups[0];
+            await RefreshUrlsAsync();
+        }
+        _loading = false;
+    }
+
+    private async Task RefreshUrlsAsync()
+    {
+        if (_node is null) return;
+        _url = await Published.GetUrlAsync(_node.Id, CultureKey);
+        _cultureUrls = Varies
+            ? (await Published.GetCultureLinksAsync(_node.Id, preview: false, _culture)).ToDictionary(l => l.IsoCode, l => l.Url, StringComparer.OrdinalIgnoreCase)
+            : new(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string GroupOf(PropertyType p) => string.IsNullOrWhiteSpace(p.GroupName) ? "Content" : p.GroupName;
+
+    private bool HasError(string alias) => _errors.ContainsKey(alias);
+
+    private string? ErrorFor(PropertyType p) => _errors.GetValueOrDefault(p.Alias);
+
+    private bool GroupHasErrors(string group) =>
+        _node is not null && _node.ContentType.Properties.Any(p => GroupOf(p) == group && _errors.ContainsKey(p.Alias));
+
+    private string LanguageName(string iso) => _languages.Match(iso)?.Name ?? iso;
+
+    private string StateLabel(Language l)
+    {
+        var state = _node!.GetCulture(l.IsoCode);
+        if (state is not { Exists: true }) return "not created";
+        if (!state.IsPublished) return "draft";
+        return state.HasPendingChanges ? "pending changes" : "published";
+    }
+
+    private Dictionary<string, object?> EditorParameters(PropertyType p, bool invalid) => new()
+    {
+        ["Value"] = _node!.GetValue(p.Alias, CultureKey),
+        ["ValueChanged"] = EventCallback.Factory.Create<string?>(this, (string? v) => OnValueChanged(p.Alias, v)),
+        ["Property"] = p,
+        ["Invalid"] = invalid
+    };
+
+    private void OnValueChanged(string alias, string? value)
+    {
+        _node!.SetValue(alias, value, CultureKey);
+        _dirty = true;
+        if (!string.IsNullOrWhiteSpace(value)) _errors.Remove(alias);
+    }
+
+    private void OnNameInput(ChangeEventArgs e)
+    {
+        _node!.SetName(CultureKey, e.Value?.ToString() ?? string.Empty);
+        _dirty = true;
+        if (!string.IsNullOrWhiteSpace(_node.GetName(CultureKey))) _errors.Remove("name");
+    }
+
+    private void OnSegmentChanged(ChangeEventArgs e)
+    {
+        _node!.SetUrlSegment(CultureKey, Slug.ToUrlSegment(e.Value?.ToString()));
+        _dirty = true;
+    }
+
+    private void OnTemplateChanged(ChangeEventArgs e)
+    {
+        var v = e.Value?.ToString();
+        _node!.TemplateAlias = string.IsNullOrEmpty(v) ? null : v;
+        _dirty = true;
+    }
+
+    private Task OnCultureChanged(ChangeEventArgs e) => SwitchCulture(e.Value?.ToString());
+
+    /// <summary>Switches the language being edited. Unsaved edits stay on the node (they are saved together), so nothing is lost.</summary>
+    private async Task SwitchCulture(string? iso)
+    {
+        var language = _languages.Match(iso);
+        if (language is null || language.Is(_culture)) return;
+        _culture = language.IsoCode;
+        _currentLanguage = language;
+        ApplyErrors(_allErrors);
+        await RefreshUrlsAsync();
+    }
+
+    private IReadOnlyList<ContentValidationError> _allErrors = [];
+
+    /// <summary>Splits validation errors into the ones for the language on screen (shown inline) and the rest (listed at the top).</summary>
+    private void ApplyErrors(IReadOnlyList<ContentValidationError> errors)
+    {
+        _allErrors = errors;
+        _errors = errors.Where(e => e.Culture is null || string.Equals(e.Culture, _culture, StringComparison.OrdinalIgnoreCase))
+            .GroupBy(e => e.PropertyAlias, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().Message, StringComparer.OrdinalIgnoreCase);
+        _cultureErrors = errors.Where(e => e.Culture is not null && !string.Equals(e.Culture, _culture, StringComparison.OrdinalIgnoreCase))
+            .GroupBy(e => e.Culture!, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+    }
+
+    private async Task<bool> PersistAsync()
+    {
+        if (_node is null) return false;
+        try
+        {
+            _node = await Content.SaveAsync(_node);
+            _dirty = false;
+            await RefreshUrlsAsync();
+            return true;
+        }
+        catch (InvalidOperationException ex)
+        {
+            Toasts.Error(ex, "Could not save");
+            return false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _busy = true;
+        try
+        {
+            if (await PersistAsync())
+            {
+                Toasts.Success("Saved", _node!.GetName(CultureKey));
+                await OnChanged.InvokeAsync();
+            }
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task SaveAndPublishAsync()
+    {
+        if (Varies && _languages.Count > 1)
+        {
+            // Save first so the dialog shows the current state, then let the editor pick the languages.
+            _busy = true;
+            try
+            {
+                if (!await PersistAsync()) return;
+            }
+            finally { _busy = false; }
+            _publishOpen = true;
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            if (!await PersistAsync()) return;
+            await PublishAsync(Varies ? [_culture] : null);
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task PublishCulturesAsync(IReadOnlyList<string> cultures)
+    {
+        _publishOpen = false;
+        _busy = true;
+        try
+        {
+            await PublishAsync(cultures);
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task PublishAsync(IReadOnlyList<string>? cultures)
+    {
+        var result = await Content.PublishAsync(_node!.Id, cultures);
+        if (result.Success)
+        {
+            _node = result.Node;
+            ApplyErrors([]);
+            await RefreshUrlsAsync();
+            var what = cultures is { Count: > 0 } && Varies ? string.Join(", ", cultures.Select(LanguageName)) : _node!.GetName(CultureKey);
+            Toasts.Success("Published", what);
+        }
+        else
+        {
+            ApplyErrors(result.Errors);
+            // Jump to the first language and tab that has a problem.
+            if (_errors.Count == 0 && _cultureErrors.Count > 0) await SwitchCulture(_cultureErrors.Keys.First());
+            var firstGroup = _node!.ContentType.Properties.Where(p => _errors.ContainsKey(p.Alias)).Select(GroupOf).FirstOrDefault();
+            if (firstGroup is not null) _tab = firstGroup;
+            var count = result.Errors.Count;
+            Toasts.Warning("Saved, but not published", count == 1 ? result.Errors[0].Message : $"{count} problems need attention.");
+        }
+        await OnChanged.InvokeAsync();
+    }
+
+    private async Task UnpublishAsync()
+    {
+        _busy = true;
+        try
+        {
+            var dirtyValues = _node!.DraftValues;
+            var dirtyCultures = _node.Cultures;
+            var name = _node.Name;
+            var template = _node.TemplateAlias;
+            _node = await Content.UnpublishAsync(_node.Id, CultureKey) ?? _node;
+            if (_dirty)
+            {
+                // Keep the unsaved edits on top of the fresh state.
+                _node.DraftValues = dirtyValues;
+                _node.Name = name;
+                _node.TemplateAlias = template;
+                foreach (var (iso, state) in dirtyCultures)
+                {
+                    var fresh = _node.GetOrAddCulture(iso);
+                    fresh.Name = state.Name;
+                    fresh.UrlSegment = state.UrlSegment;
+                    fresh.DraftValues = state.DraftValues;
+                }
+            }
+            await RefreshUrlsAsync();
+            Toasts.Info("Unpublished", Varies ? $"{_node.GetName(CultureKey)} · {LanguageName(_culture)}" : _node.Name);
+            await OnChanged.InvokeAsync();
+        }
+        finally { _busy = false; }
+    }
+
+    private async Task DeleteAsync()
+    {
+        _confirmDelete = false;
+        if (_node is null) return;
+        var name = _node.GetName(CultureKey);
+        await Content.DeleteAsync(_node.Id);
+        Toasts.Info("Deleted", name);
+        await OnDeleted.InvokeAsync();
+    }
+
+    private async Task MoveAsync(int direction)
+    {
+        if (_node is null) return;
+        await Content.MoveAsync(_node.Id, direction);
+        await OnChanged.InvokeAsync();
+    }
+}

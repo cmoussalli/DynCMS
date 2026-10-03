@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <!-- DynCMS.Host brings DynCMS.Core and DynCMS.UI with it. In a project outside this solution this is
+       <PackageReference Include="DynCMS.Host" Version="0.1.0" /> instead, and the package applies
+       build/DynCMS.Host.props by itself; a ProjectReference does not, so it is imported here. -->
+  <ItemGroup>
+    <ProjectReference Include="..\DynCMS.Host\DynCMS.Host.csproj" />
+  </ItemGroup>
+  <Import Project="..\DynCMS.Host\build\DynCMS.Host.props" />
+
+</Project>

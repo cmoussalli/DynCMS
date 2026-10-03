@@ -1,0 +1,60 @@
+@page "/admin/{**Rest}"
+@namespace DynCMS.UI.Admin.Pages
+@using DynCMS.Core.Plugins
+@inject IPluginManager Plugins
+
+@*
+    Catch-all of the back office: every /admin/… URL no built-in page claims lands here and is offered to the running
+    plugins (a plugin page declared as @page "/admin/shop/orders" is served at exactly that URL). Literal routes beat
+    this catch-all, so the built-in sections are unaffected. Without a match, a not-found panel renders inside the
+    admin layout.
+*@
+
+<PluginPageOutlet Path="@("/admin/" + Rest)" Admin="true">
+    <PageTitle>Not found · DynCMS</PageTitle>
+    <div class="dc-page">
+        <div class="dc-workspace-empty dc-plugin-notfound">
+            <span class="dc-empty-tile"><Icon Name="help-circle" Size="32" /></span>
+            <h2>There is nothing at <code>/admin/@Rest</code></h2>
+            @if (_stopped.Count > 0)
+            {
+                <p>A stopped plugin may own this page: @string.Join(", ", _stopped). Start it under Settings → Plugins.</p>
+            }
+            else
+            {
+                <p>The page does not exist in the back office, and no running plugin provides it.</p>
+            }
+            <div class="dc-inline">
+                <a class="dc-btn dc-btn-primary" href="/admin"><Icon Name="grid" Size="14" /> Dashboard</a>
+                <AuthorizeView Roles="@CmsRoles.Admin">
+                    <a class="dc-btn" href="/admin/settings/plugins"><Icon Name="box" Size="14" /> Plugins</a>
+                </AuthorizeView>
+            </div>
+        </div>
+    </div>
+</PluginPageOutlet>
+
+@code {
+    [Parameter] public string? Rest { get; set; }
+
+    private IReadOnlyList<string> _stopped = [];
+
+    protected override void OnParametersSet()
+    {
+        var path = "/admin/" + (Rest ?? string.Empty);
+        _stopped = Plugins.Plugins
+            .Where(p => !p.IsRunning)
+            .Where(p => p.Pages.Any(x => x.IsAdmin && Prefix(x.Template) is { } prefix && path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+            .Select(p => p.Name)
+            .ToList();
+    }
+
+    // A stopped plugin's pages are not known (they are discovered on start); the prefix check works for the ones
+    // that were running earlier in this process and keeps the hint honest otherwise.
+    private static string? Prefix(string template)
+    {
+        var index = template.IndexOf('{');
+        var literal = index < 0 ? template : template[..index];
+        return literal.Length > "/admin/".Length ? literal : null;
+    }
+}

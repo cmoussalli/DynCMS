@@ -1,0 +1,73 @@
+@namespace DynCMS.UI.Admin.Components.Analytics
+@using DynCMS.Core.Analytics
+
+<div class="dc-an-range">
+    <div class="dc-segmented dc-an-presets" role="group" aria-label="Period">
+        @foreach (var (id, label) in Presets)
+        {
+            <button type="button" class="@(Preset == id ? "dc-active" : null)" @onclick="() => SelectPreset(id)">@label</button>
+        }
+        <button type="button" class="@(Preset == "custom" ? "dc-active" : null)" @onclick="ToggleCustom"><Icon Name="calendar" Size="13" /> Custom</button>
+    </div>
+    @if (_customOpen || Preset == "custom")
+    {
+        <div class="dc-an-custom">
+            <input class="dc-input" type="date" @bind="_from" @bind:after="ApplyCustom" max="@DateTime.Today.ToString("yyyy-MM-dd")" />
+            <span class="dc-muted">to</span>
+            <input class="dc-input" type="date" @bind="_to" @bind:after="ApplyCustom" max="@DateTime.Today.ToString("yyyy-MM-dd")" />
+        </div>
+    }
+    <span class="dc-an-range-label">@AnalyticsFormat.RangeLabel(Range)</span>
+</div>
+
+@code {
+    private static readonly (string Id, string Label)[] Presets =
+    [
+        ("today", "Today"), ("yesterday", "Yesterday"), ("7d", "7 days"), ("30d", "30 days"), ("90d", "90 days"), ("12m", "12 months")
+    ];
+
+    [Parameter] public string Preset { get; set; } = "30d";
+    [Parameter] public AnalyticsRange Range { get; set; } = AnalyticsRange.LastDays(30);
+    [Parameter] public EventCallback<(string Preset, AnalyticsRange Range)> OnChange { get; set; }
+
+    private bool _customOpen;
+    private DateTime _from = DateTime.Today.AddDays(-29);
+    private DateTime _to = DateTime.Today;
+
+    /// <summary>The range a preset stands for, computed in the server's local time zone.</summary>
+    public static AnalyticsRange RangeFor(string preset) => preset switch
+    {
+        "today" => AnalyticsRange.LastDays(1),
+        "yesterday" => Yesterday(),
+        "7d" => AnalyticsRange.LastDays(7),
+        "90d" => AnalyticsRange.LastDays(90),
+        "12m" => AnalyticsRange.LastDays(365),
+        _ => AnalyticsRange.LastDays(30)
+    };
+
+    private static AnalyticsRange Yesterday()
+    {
+        var today = AnalyticsRange.LastDays(1);
+        return new AnalyticsRange(today.From - today.Length, today.From);
+    }
+
+    protected override void OnParametersSet()
+    {
+        _from = Range.From.ToLocalTime().Date;
+        _to = Range.To.AddSeconds(-1).ToLocalTime().Date;
+    }
+
+    private Task SelectPreset(string id)
+    {
+        _customOpen = false;
+        return OnChange.InvokeAsync((id, RangeFor(id)));
+    }
+
+    private void ToggleCustom() => _customOpen = !_customOpen;
+
+    private Task ApplyCustom()
+    {
+        if (_to < _from) (_from, _to) = (_to, _from);
+        return OnChange.InvokeAsync(("custom", AnalyticsRange.Days(_from, _to)));
+    }
+}

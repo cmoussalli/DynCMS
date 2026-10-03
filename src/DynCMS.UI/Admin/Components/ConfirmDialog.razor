@@ -1,0 +1,23 @@
+@namespace DynCMS.UI.Admin.Components
+
+<Modal Title="@Title" Size="Modal.ModalSize.Small" OnClose="Cancel">
+    <ChildContent>
+        <p class="dc-confirm-text">@Message</p>
+    </ChildContent>
+    <Footer>
+        <button type="button" class="dc-btn" @onclick="Cancel">Cancel</button>
+        <button type="button" class="dc-btn @(Danger ? "dc-btn-danger" : "dc-btn-primary")" @onclick="Confirm">@ConfirmText</button>
+    </Footer>
+</Modal>
+
+@code {
+    [Parameter] public string Title { get; set; } = "Are you sure?";
+    [Parameter] public string Message { get; set; } = string.Empty;
+    [Parameter] public string ConfirmText { get; set; } = "Confirm";
+    [Parameter] public bool Danger { get; set; }
+    [Parameter] public EventCallback OnConfirm { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private Task Confirm() => OnConfirm.InvokeAsync();
+    private Task Cancel() => OnCancel.InvokeAsync();
+}
