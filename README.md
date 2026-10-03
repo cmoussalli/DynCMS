@@ -235,8 +235,8 @@ view history, which gets its own backups. Details: [developer guide, §15](DEVEL
 
 ## Plugins
 
-DynCMS can be extended at runtime with **plugins**: Razor class libraries that any developer builds against
-`DynCMS.Core`/`DynCMS.UI` and an administrator uploads under **Settings → Plugins** (a `.dll` or a `.zip`), or copies
+DynCMS can be extended at runtime with **plugins**: Razor class libraries that any developer builds against the
+small `DynCMS.Plugins.Sdk` package (the only reference a plugin needs) and an administrator uploads under **Settings → Plugins** (a `.dll` or a `.zip`), or copies
 into `App_Data/plugins/{id}/`. No redeploy, no restart. A plugin can bring:
 
 - **Pages.** Components with `@page`: routes under `/admin/…` render inside the back office for signed-in users,

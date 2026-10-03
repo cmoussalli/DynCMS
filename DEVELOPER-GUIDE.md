@@ -78,14 +78,15 @@ start lands on `/setup`, and the new database gets the starter site (`options.Se
 
 ## 2. Solution map
 
-Besides the four `src/` projects, `samples/DynCMS.Plugin.Guestbook` is a complete plugin (§25); it is in the solution but nothing references it.
+Besides the four site projects, `src/DynCMS.Plugins.Sdk` is the small package plugin authors reference (§25), and `samples/DynCMS.Plugin.Guestbook` is a complete plugin built on it; it is in the solution but nothing references it.
 
 ```
 DynCMS.slnx
 └── src
-    ├── DynCMS.Core   (class library, net10.0)        ← no UI-framework dependency
-    ├── DynCMS.UI     (Razor class library, net10.0)  ← references Core
-    ├── DynCMS.Host   (Razor class library, net10.0)  ← references Core + UI; the NuGet package a site installs
+    ├── DynCMS.Plugins.Sdk (Razor class library)      ← the plugin contract + shared UI bits; no other DynCMS reference
+    ├── DynCMS.Core   (class library, net10.0)        ← references Plugins.Sdk; no UI-framework dependency
+    ├── DynCMS.UI     (Razor class library, net10.0)  ← references Core + Plugins.Sdk
+    ├── DynCMS.Host   (Razor class library, net10.0)  ← references Core + UI + Plugins.Sdk; the NuGet package a site installs
     └── DynCMS.Web    (Blazor Web App, net10.0)       ← references Host; the minimal host project (the demo is archived, §20)
 ```
 
@@ -2539,14 +2540,25 @@ curl -s -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
 
 Added 2026-09-27. A plugin is a Razor class library that is loaded into the running site from
 `App_Data/plugins/{id}/` (configurable, §16) and can be started, stopped, reloaded, installed and uninstalled without a
-restart. Everything lives in `DynCMS.Core/Plugins/`; the back office page is `DynCMS.UI/Admin/Components/PluginsPanel.razor`;
+restart. The plugin contract (`IDynCmsPlugin`, `DynCmsPlugin`, `IPluginContext`, `PluginMenuItem`, `CmsRoles`) lives in
+`DynCMS.Plugins.Sdk`; the machinery that loads and runs plugins lives in `DynCMS.Core/Plugins/`; the back office page is `DynCMS.UI/Admin/Components/PluginsPanel.razor`;
 the sample is `samples/DynCMS.Plugin.Guestbook`.
 
 ### 25.1 Writing a plugin
 
-1. `dotnet new razorclasslib -n My.Plugin` (net10.0). Reference `DynCMS.Core` and `DynCMS.UI` (`PackageReference` outside
-   this repository, `ProjectReference` inside) with `Private="false"` / `ExcludeAssets="runtime"`: the site already has
-   them and a plugin must never ship its own copies. Set `CopyLocalLockFileAssemblies` to `false`.
+1. `dotnet new razorclasslib -n My.Plugin` (net10.0) and reference **only** `DynCMS.Plugins.Sdk`
+   (`PackageReference` outside this repository; inside it a `ProjectReference` with `Private="false"` plus an `Import` of
+   `src/DynCMS.Plugins.Sdk/build/DynCMS.Plugins.Sdk.props` and `.targets`, which NuGet does by itself for the package).
+   Do not reference `DynCMS.Core` or `DynCMS.UI`: they are the site's internals, not a supported surface. The SDK's MSBuild
+   files set what a plugin needs (`CopyLocalLockFileAssemblies=false`, the ASP.NET Core framework reference, the
+   `/_content/{id}` static asset path, global C# usings for `DynCMS.Plugins`, `.Components` and `.Services`) and add the
+   `PackDynCmsPlugin` target (25.2). Anything else the plugin uses (Entity Framework Core, say) is an ordinary
+   `PackageReference` at the version the site ships; it is not copied into the package because the site provides it.
+   Razor does not pick the global usings up for component tags: put `@using DynCMS.Plugins`,
+   `@using DynCMS.Plugins.Components` and `@using DynCMS.Plugins.Services` into the plugin's `_Imports.razor`, or
+   `<Icon>` renders as an unknown HTML element and shows nothing (no build error).
+   The SDK exposes, besides the contract: `Icon` (the back office icon set), `ToastService` and `CmsRoles`. Plugin pages
+   get their `dc-*` CSS classes from the site's back office stylesheet.
 2. Add **one** public class deriving from `DynCmsPlugin` (or implementing `IDynCmsPlugin`) with a parameterless
    constructor. Metadata (`Name`, `Description`, `Version`, `Author`) defaults to the assembly attributes
    (`AssemblyTitle`, `Description`, `InformationalVersion`, `Company` in the project file); `Id` defaults to the assembly
@@ -2602,7 +2614,7 @@ App_Data/plugins/
 ```
 
 A **package** is a `.zip` with `bin/` (or the dlls at the root) and an optional `wwwroot/`, or a single `.dll`. The
-sample project's `PackDynCmsPlugin` target builds `bin/<Configuration>/<name>.plugin.zip` after every build and, with
+SDK's `PackDynCmsPlugin` target (build/DynCMS.Plugins.Sdk.targets, imported by every plugin project) builds `bin/<Configuration>/<name>.plugin.zip` after every build and, with
 `-p:DynCmsPluginDeployDir=<site>/App_Data/plugins`, copies the layout straight into a site (then click *Reload*).
 
 Install by uploading on **Settings → Plugins** (`DynCms:Plugins:AllowUpload`, administrators), through

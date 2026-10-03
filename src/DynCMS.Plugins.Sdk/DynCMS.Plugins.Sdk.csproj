@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>DynCMS.Plugins</RootNamespace>
+    <AddRazorSupportForMvc>false</AddRazorSupportForMvc>
+    <PackageId>DynCMS.Plugins.Sdk</PackageId>
+    <Description>The DynCMS plugin SDK: the plugin contract, the shared admin UI building blocks and the MSBuild packaging for plugins. A plugin references only this package.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <SupportedPlatform Include="browser" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <!-- MSBuild defaults and the PackDynCmsPlugin target for plugin projects (build/DynCMS.Plugins.Sdk.props and .targets). -->
+  <ItemGroup>
+    <None Include="build\DynCMS.Plugins.Sdk.props;build\DynCMS.Plugins.Sdk.targets" Pack="true" PackagePath="build\;buildTransitive\" />
+  </ItemGroup>
+
+</Project>

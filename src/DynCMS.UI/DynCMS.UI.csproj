@@ -22,7 +22,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\DynCMS.Plugins.Sdk\DynCMS.Plugins.Sdk.csproj" />
     <ProjectReference Include="..\DynCMS.Core\DynCMS.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="DynCMS.Plugins" />
+    <Using Include="DynCMS.Plugins.Components" />
+    <Using Include="DynCMS.Plugins.Services" />
   </ItemGroup>
 
 </Project>

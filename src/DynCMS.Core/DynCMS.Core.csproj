@@ -20,4 +20,12 @@
     <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.2.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Using Include="DynCMS.Plugins" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DynCMS.Plugins.Sdk\DynCMS.Plugins.Sdk.csproj" />
+  </ItemGroup>
+
 </Project>

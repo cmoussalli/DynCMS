@@ -1,9 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk.Razor">
 
   <!--
-    A DynCMS plugin is a Razor class library. This sample brings a public /guestbook page, a moderated
-    /admin/guestbook section with a top-bar link, a minimal API, an API controller, a service with its own SQLite
-    database in the plugin's data folder, options bound from settings, and a stylesheet served from wwwroot.
+    A DynCMS plugin is a Razor class library that references only the DynCMS plugin SDK. This sample brings a public
+    /guestbook page, a moderated /admin/guestbook section with a top-bar link, a minimal API, an API controller, a
+    service with its own SQLite database in the plugin's data folder, options bound from settings, and a stylesheet
+    served from wwwroot.
 
     Build it and upload bin/Debug/DynCMS.Plugin.Guestbook.plugin.zip on Settings → Plugins, or copy the package's
     contents to App_Data/plugins/DynCMS.Plugin.Guestbook/ and click "Rescan folder". For a tight edit-build-test
@@ -18,58 +19,30 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <RootNamespace>DynCMS.Plugin.Guestbook</RootNamespace>
-    <AddRazorSupportForMvc>false</AddRazorSupportForMvc>
-    <StaticWebAssetBasePath>_content/DynCMS.Plugin.Guestbook</StaticWebAssetBasePath>
-    <IsPackable>false</IsPackable>
 
     <!-- Shown on the Plugins page (DynCmsPlugin reads the assembly attributes). -->
     <AssemblyTitle>Guestbook</AssemblyTitle>
     <Description>Visitors sign a guestbook on the site; entries are moderated in the back office and stored in the plugin's own SQLite database.</Description>
     <Company>DynCMS samples</Company>
     <Version>1.0.0</Version>
-
-    <!-- The host provides DynCMS and everything it depends on; only the plugin's own assemblies go in the package. -->
-    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
   </PropertyGroup>
 
   <ItemGroup>
-    <SupportedPlatform Include="browser" />
-    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <!--
+      In a project outside this repository this is
+        <PackageReference Include="DynCMS.Plugins.Sdk" Version="..." />
+      and the two Import lines below disappear: NuGet imports the package's build/*.props and *.targets by itself.
+      Private="false": the site already has the SDK, the plugin must not ship its own copy.
+    -->
+    <ProjectReference Include="..\..\src\DynCMS.Plugins.Sdk\DynCMS.Plugins.Sdk.csproj" Private="false" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- In a project outside this repository these are PackageReferences to DynCMS.Core and DynCMS.UI with the same
-         Private="false" / ExcludeAssets="runtime": the site already has them, the plugin must not ship its own copies. -->
-    <ProjectReference Include="..\..\src\DynCMS.Core\DynCMS.Core.csproj" Private="false" />
-    <ProjectReference Include="..\..\src\DynCMS.UI\DynCMS.UI.csproj" Private="false" />
+    <!-- What the plugin uses besides the SDK. The site already ships EF Core (same version), so nothing of it is copied into the package. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.12" />
   </ItemGroup>
 
-  <!--
-    Packaging: bin/<Configuration>/<AssemblyName>.plugin.zip with the layout the plugin manager expects
-    (bin/ with the assemblies, wwwroot/ with static files). Set DynCmsPluginDeployDir to also copy the layout into a
-    site's plugin folder.
-  -->
-  <Target Name="PackDynCmsPlugin" AfterTargets="Build" Condition="'$(PackDynCmsPlugin)' != 'false'">
-    <PropertyGroup>
-      <_PluginStage>$(IntermediateOutputPath)dyncms-plugin\</_PluginStage>
-      <_PluginPackage>$(MSBuildProjectDirectory)\bin\$(Configuration)\$(AssemblyName).plugin.zip</_PluginPackage>
-    </PropertyGroup>
-    <ItemGroup>
-      <_PluginBinaries Include="$(TargetDir)*.dll;$(TargetDir)*.pdb;$(TargetDir)*.deps.json" />
-      <_PluginAssets Include="$(MSBuildProjectDirectory)\wwwroot\**\*" />
-    </ItemGroup>
-    <RemoveDir Directories="$(_PluginStage)" />
-    <Copy SourceFiles="@(_PluginBinaries)" DestinationFolder="$(_PluginStage)bin" />
-    <Copy SourceFiles="@(_PluginAssets)" DestinationFiles="@(_PluginAssets->'$(_PluginStage)wwwroot\%(RecursiveDir)%(Filename)%(Extension)')" />
-    <Delete Files="$(_PluginPackage)" />
-    <ZipDirectory SourceDirectory="$(_PluginStage)" DestinationFile="$(_PluginPackage)" Overwrite="true" />
-    <Message Importance="high" Text="DynCMS plugin package: $(_PluginPackage)" />
-
-    <ItemGroup Condition="'$(DynCmsPluginDeployDir)' != ''">
-      <_PluginStaged Include="$(_PluginStage)**\*" />
-    </ItemGroup>
-    <Copy Condition="'$(DynCmsPluginDeployDir)' != ''" SourceFiles="@(_PluginStaged)" DestinationFiles="@(_PluginStaged->'$(DynCmsPluginDeployDir)\$(AssemblyName)\%(RecursiveDir)%(Filename)%(Extension)')" />
-    <Message Condition="'$(DynCmsPluginDeployDir)' != ''" Importance="high" Text="DynCMS plugin deployed to: $(DynCmsPluginDeployDir)\$(AssemblyName) (click Reload on Settings → Plugins)" />
-  </Target>
+  <Import Project="..\..\src\DynCMS.Plugins.Sdk\build\DynCMS.Plugins.Sdk.props" />
+  <Import Project="..\..\src\DynCMS.Plugins.Sdk\build\DynCMS.Plugins.Sdk.targets" />
 
 </Project>

@@ -1,4 +1,4 @@
-namespace DynCMS.UI.Services;
+namespace DynCMS.Plugins.Services;
 
 public enum ToastLevel { Info, Success, Warning, Error }
 

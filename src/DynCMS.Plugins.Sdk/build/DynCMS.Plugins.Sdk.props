@@ -1,0 +1,25 @@
+<Project>
+  <!--
+    Defaults for a DynCMS plugin project (a Razor class library, Sdk="Microsoft.NET.Sdk.Razor"). Every value can be
+    overridden in the plugin's own project file.
+  -->
+  <PropertyGroup>
+    <AddRazorSupportForMvc Condition="'$(AddRazorSupportForMvc)' == ''">false</AddRazorSupportForMvc>
+    <!-- Wwwroot is served at /_content/{plugin id}; the plugin id is the assembly name. -->
+    <StaticWebAssetBasePath Condition="'$(StaticWebAssetBasePath)' == ''">_content/$(MSBuildProjectName)</StaticWebAssetBasePath>
+    <IsPackable Condition="'$(IsPackable)' == ''">false</IsPackable>
+    <!-- The site provides DynCMS and everything it depends on; only the plugin's own assemblies go in the package. -->
+    <CopyLocalLockFileAssemblies Condition="'$(CopyLocalLockFileAssemblies)' == ''">false</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <SupportedPlatform Include="browser" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="DynCMS.Plugins" />
+    <Using Include="DynCMS.Plugins.Components" />
+    <Using Include="DynCMS.Plugins.Services" />
+  </ItemGroup>
+</Project>

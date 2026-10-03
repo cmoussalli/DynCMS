@@ -1,5 +1,3 @@
-using DynCMS.Core.Plugins;
-using DynCMS.Core.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;

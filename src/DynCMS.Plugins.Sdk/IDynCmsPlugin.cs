@@ -2,7 +2,7 @@ using System.Reflection;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace DynCMS.Core.Plugins;
+namespace DynCMS.Plugins;
 
 /// <summary>
 /// A DynCMS plugin: a Razor class library that is dropped into <c>App_Data/plugins</c> (or uploaded from the back
@@ -36,7 +36,7 @@ public interface IDynCmsPlugin
     string? Author { get; }
 
     /// <summary>
-    /// The lowest DynCMS version (<see cref="CmsVersion.Application"/>) this plugin works with, for example
+    /// The lowest DynCMS version (shown as <c>Application</c> on Settings → System) this plugin works with, for example
     /// <c>0.2.0</c>. Required: a plugin that leaves it empty, or that needs a newer DynCMS than the one running,
     /// is not attached; the back office asks the administrator to update DynCMS first.
     /// </summary>

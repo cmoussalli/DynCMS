@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/DynCMS.Plugins.Sdk/DynCMS.Plugins.Sdk.csproj" />
     <Project Path="src/DynCMS.Core/DynCMS.Core.csproj" />
     <Project Path="src/DynCMS.UI/DynCMS.UI.csproj" />
     <Project Path="src/DynCMS.Host/DynCMS.Host.csproj" />

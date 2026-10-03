@@ -1,0 +1,82 @@
+name: Publish NuGet packages
+
+# Publishes DynCMS.Core and DynCMS.UI to nuget.org.
+# Trigger: publish a GitHub release (tag like v0.2.0) or push a tag v*, or run manually.
+# The package version comes from the tag (leading "v" stripped); for a manual run
+# it comes from the "version" input, falling back to <Version> in Directory.Build.props.
+
+on:
+  push:
+    tags:
+      - "v*"
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Package version (leave empty to use Directory.Build.props)"
+        required: false
+        type: string
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          elif [[ -n "${{ inputs.version }}" ]]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION=""
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Version override: '${VERSION:-<none, using Directory.Build.props>}'"
+
+      - name: Restore
+        run: dotnet restore src/DynCMS.Plugins.Sdk/DynCMS.Plugins.Sdk.csproj && dotnet restore src/DynCMS.Core/DynCMS.Core.csproj && dotnet restore src/DynCMS.UI/DynCMS.UI.csproj
+
+      - name: Pack DynCMS.Plugins.Sdk
+        shell: bash
+        run: |
+          ARGS=()
+          [[ -n "${{ steps.version.outputs.version }}" ]] && ARGS+=("-p:Version=${{ steps.version.outputs.version }}")
+          dotnet pack src/DynCMS.Plugins.Sdk/DynCMS.Plugins.Sdk.csproj -c Release --no-restore -o ./nupkgs "${ARGS[@]}"
+
+      - name: Pack DynCMS.Core
+        shell: bash
+        run: |
+          ARGS=()
+          [[ -n "${{ steps.version.outputs.version }}" ]] && ARGS+=("-p:Version=${{ steps.version.outputs.version }}")
+          dotnet pack src/DynCMS.Core/DynCMS.Core.csproj -c Release --no-restore -o ./nupkgs "${ARGS[@]}"
+
+      - name: Pack DynCMS.UI
+        shell: bash
+        run: |
+          ARGS=()
+          [[ -n "${{ steps.version.outputs.version }}" ]] && ARGS+=("-p:Version=${{ steps.version.outputs.version }}")
+          dotnet pack src/DynCMS.UI/DynCMS.UI.csproj -c Release --no-restore -o ./nupkgs "${ARGS[@]}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nupkgs
+          path: ./nupkgs/*.nupkg
+
+      # The SDK first (Core and UI depend on it), then Core (UI depends on it), all at the same version.
+      - name: Push DynCMS.Plugins.Sdk
+        run: dotnet nuget push "./nupkgs/DynCMS.Plugins.Sdk.*.nupkg" --api-key "${{ secrets.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+      - name: Push DynCMS.Core
+        run: dotnet nuget push "./nupkgs/DynCMS.Core.*.nupkg" --api-key "${{ secrets.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+      - name: Push DynCMS.UI
+        run: dotnet nuget push "./nupkgs/DynCMS.UI.*.nupkg" --api-key "${{ secrets.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate

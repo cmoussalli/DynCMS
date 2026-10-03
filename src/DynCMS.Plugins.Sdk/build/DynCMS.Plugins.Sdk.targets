@@ -1,0 +1,31 @@
+<Project>
+  <!--
+    Packaging: bin/<Configuration>/<AssemblyName>.plugin.zip with the layout the plugin manager expects
+    (bin/ with the assemblies, wwwroot/ with static files). Set DynCmsPluginDeployDir to also copy the layout into a
+    site's plugin folder, then click "Reload" on Settings -> Plugins. Set PackDynCmsPlugin=false to skip packaging.
+  -->
+  <Target Name="PackDynCmsPlugin" AfterTargets="Build" Condition="'$(PackDynCmsPlugin)' != 'false'">
+    <PropertyGroup>
+      <_PluginStage>$(IntermediateOutputPath)dyncms-plugin\</_PluginStage>
+      <_PluginPackage>$(MSBuildProjectDirectory)\bin\$(Configuration)\$(AssemblyName).plugin.zip</_PluginPackage>
+    </PropertyGroup>
+    <ItemGroup>
+      <_PluginBinaries Include="$(TargetDir)*.dll;$(TargetDir)*.pdb;$(TargetDir)*.deps.json" />
+      <!-- The site ships these; a plugin must never carry its own copies. -->
+      <_PluginBinaries Remove="$(TargetDir)DynCMS.Plugins.Sdk.*;$(TargetDir)DynCMS.Core.*;$(TargetDir)DynCMS.UI.*;$(TargetDir)DynCMS.Host.*" />
+      <_PluginAssets Include="$(MSBuildProjectDirectory)\wwwroot\**\*" />
+    </ItemGroup>
+    <RemoveDir Directories="$(_PluginStage)" />
+    <Copy SourceFiles="@(_PluginBinaries)" DestinationFolder="$(_PluginStage)bin" />
+    <Copy SourceFiles="@(_PluginAssets)" DestinationFiles="@(_PluginAssets->'$(_PluginStage)wwwroot\%(RecursiveDir)%(Filename)%(Extension)')" />
+    <Delete Files="$(_PluginPackage)" />
+    <ZipDirectory SourceDirectory="$(_PluginStage)" DestinationFile="$(_PluginPackage)" Overwrite="true" />
+    <Message Importance="high" Text="DynCMS plugin package: $(_PluginPackage)" />
+
+    <ItemGroup Condition="'$(DynCmsPluginDeployDir)' != ''">
+      <_PluginStaged Include="$(_PluginStage)**\*" />
+    </ItemGroup>
+    <Copy Condition="'$(DynCmsPluginDeployDir)' != ''" SourceFiles="@(_PluginStaged)" DestinationFiles="@(_PluginStaged->'$(DynCmsPluginDeployDir)\$(AssemblyName)\%(RecursiveDir)%(Filename)%(Extension)')" />
+    <Message Condition="'$(DynCmsPluginDeployDir)' != ''" Importance="high" Text="DynCMS plugin deployed to: $(DynCmsPluginDeployDir)\$(AssemblyName) (click Reload on Settings -> Plugins)" />
+  </Target>
+</Project>

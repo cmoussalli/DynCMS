@@ -200,7 +200,7 @@
                         <section class="dc-card">
                             <div class="dc-card-head"><h3><Icon Name="code" Size="16" /> Build one</h3></div>
                             <ol class="dc-plugin-steps">
-                                <li>Create a <strong>Razor class library</strong> (net10.0) and reference <code>DynCMS.Core</code> and <code>DynCMS.UI</code> with <code>Private="false"</code>. Declare the oldest DynCMS you support with <code>[assembly: DynCmsMinimumVersion("0.1.0")]</code>; it is required.</li>
+                                <li>Create a <strong>Razor class library</strong> (net10.0) and reference only the <code>DynCMS.Plugins.Sdk</code> package (add <code>@@using DynCMS.Plugins</code>, <code>.Components</code> and <code>.Services</code> to <code>_Imports.razor</code>). Declare the oldest DynCMS you support with <code>[assembly: DynCmsMinimumVersion("0.1.0")]</code>; it is required.</li>
                                 <li>Add one class deriving from <code>DynCmsPlugin</code>: register services in <code>ConfigureServices</code>, map endpoints in <code>MapEndpoints</code>, create your database in <code>StartAsync</code> under <code>context.DataDirectory</code>.</li>
                                 <li>Add pages with <code>@@page</code>: routes under <code>/admin/…</code> render in the back office, others on the site. Return links from <code>MenuItems</code>.</li>
                                 <li>Zip the build output (plus <code>wwwroot</code>) and upload it, or copy it to <code>@Plugins.RootPath\{id}\bin</code>.</li>
