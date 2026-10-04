@@ -152,7 +152,7 @@ everything that used to be host boilerplate lives here, and `DynCmsHost.RunAsync
 | `Components/Pages/` | `CmsPage` (`/` and `/{*Path}`), `Error` (`/Error`), `NotFound` (`/not-found`) |
 | `Components/Layout/` | `SiteLayout` (default public layout) and `ReconnectModal` (with its collocated JS) |
 | `wwwroot/` | `dyncms-shell.css` (reconnect dialog, error bar) and `dyncms-site.css` (the default theme, §21) |
-| `build/DynCMS.Host.props` | Sets `BlazorDisableThrowNavigationException=true` and `RequiresAspNetWebAssets=true` in the consuming project; packed into `build/` and `buildTransitive/`. `DynCMS.Web` imports it by hand because a `ProjectReference` does not apply it |
+| `build/DynCMS.Host.props` | Sets `BlazorDisableThrowNavigationException=true` (and `RequiresAspNetWebAssets=true`, which only helps `DynCMS.Web`, see §18) in the consuming project and imports the package's static web assets props; packed into `build/` and, via `DynCMS.Host.Transitive.props`, `buildTransitive/`. The Razor SDK's own generated `DynCMS.Host.props` is switched off in `DynCMS.Host.csproj`, otherwise it overwrites this file. `DynCMS.Web` imports it by hand because a `ProjectReference` does not apply it |
 
 It has no scoped CSS on purpose. The consuming app's `{ApplicationName}.styles.css` bundle is still linked, because
 the identity framework's UI ships scoped styles, but its name is computed from `IHostEnvironment.ApplicationName`,
@@ -2038,10 +2038,11 @@ catch-all page.
   Host projects declare `SupportedPlatform browser`.
 - `dyncms.database.json`, `App_Data/media` and `App_Data/backups` live in the content root and must be writable;
   `DynCms:BasePath` moves them.
-- `BlazorDisableThrowNavigationException=true` and `RequiresAspNetWebAssets=true` in your project, from the package's
-  `build/DynCMS.Host.props`. The second one matters when your project has no `.razor` file at all (`dotnet new web` plus
-  the package): the Web SDK only ships `_framework/blazor.web.js` when it sees one, and without the script `/setup` and
-  `/admin` render but nothing on them reacts.
+- `BlazorDisableThrowNavigationException=true` in your project, applied by the package's `build/DynCMS.Host.props`.
+- `<RequiresAspNetWebAssets>true</RequiresAspNetWebAssets>` in **your own `.csproj`**. It matters when your project has no
+  `.razor` file at all (`dotnet new web` plus the package): the Web SDK only ships `_framework/blazor.web.js` when it
+  sees one, and without the script `/setup` and `/admin` render but nothing on them reacts. A package cannot set it for
+  you: NuGet ignores package props during restore, and restore is where the SDK decides to fetch the framework assets.
 - The starter-site seeder is the *first* startup task. If you register your own seeder and leave `SeedStarterSite`
   on, the starter runs first and your seeder sees a non-empty database; turn it off.
 - Anything that must run once the database exists goes in an `IDynCmsStartupTask`, not after `Build()`. On a fresh
@@ -2269,8 +2270,10 @@ the title and `rel="prev"/"next"` links. The archive's README walks through what
 - `_framework/blazor.web.js` is a static web asset the Web SDK adds only when the project contains a `.razor` content item
   (`Microsoft.NET.Sdk.Web.ProjectSystem.targets` derives `RequiresAspNetWebAssets` from it). A host project that has
   deleted every component gets a shell whose `<script>` answers 503 in setup mode (the request falls through to the
-  catch-all page) and 404 afterwards, with no server-side error. `build/DynCMS.Host.props` forces the property to `true`;
-  keep the import (or a `.razor` file) in place. Found 2026-09-26 when `src/DynCMS.Web` was reduced to the minimal project.
+  catch-all page) and 404 afterwards, with no server-side error. `DynCMS.Web` gets the property from the
+  `build/DynCMS.Host.props` import, but a site that uses the NuGet package must set it in its own `.csproj` (package props are
+  not seen by restore); keep it (or a `.razor` file) in place. Found 2026-09-26 when `src/DynCMS.Web` was reduced to the
+  minimal project; the package case was found 2026-10-04 with a fresh `DCSite` whose setup buttons did nothing.
 
 **Scale-out**
 

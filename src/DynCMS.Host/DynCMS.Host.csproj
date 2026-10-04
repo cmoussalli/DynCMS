@@ -35,9 +35,19 @@
     <Using Include="DynCMS.Plugins.Services" />
   </ItemGroup>
 
-  <!-- MSBuild defaults for the consuming project (see build/DynCMS.Host.props). -->
+  <!--
+    MSBuild defaults for the consuming project (see build/DynCMS.Host.props). The Razor SDK would generate its own
+    build/DynCMS.Host.props (just an import of the static web assets props) and overwrite this file, so that generation is
+    switched off and build/DynCMS.Host.props imports the static web assets props itself.
+  -->
+  <PropertyGroup>
+    <StaticWebAssetsDisableProjectBuildPropsFileGeneration>true</StaticWebAssetsDisableProjectBuildPropsFileGeneration>
+    <StaticWebAssetsDisableProjectBuildMultiTargetingPropsFileGeneration>true</StaticWebAssetsDisableProjectBuildMultiTargetingPropsFileGeneration>
+    <StaticWebAssetsDisableProjectBuildTransitivePropsFileGeneration>true</StaticWebAssetsDisableProjectBuildTransitivePropsFileGeneration>
+  </PropertyGroup>
   <ItemGroup>
-    <None Include="build\DynCMS.Host.props" Pack="true" PackagePath="build\;buildTransitive\" />
+    <None Include="build\DynCMS.Host.props" Pack="true" PackagePath="build\" />
+    <None Include="build\DynCMS.Host.Transitive.props" Pack="true" PackagePath="buildTransitive\DynCMS.Host.props" />
   </ItemGroup>
 
 </Project>

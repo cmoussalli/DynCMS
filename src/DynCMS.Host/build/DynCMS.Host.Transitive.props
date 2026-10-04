@@ -1,0 +1,4 @@
+<Project>
+  <!-- Packed as buildTransitive/DynCMS.Host.props: applies the same defaults to projects that reach DynCMS.Host indirectly. -->
+  <Import Project="$(MSBuildThisFileDirectory)../build/DynCMS.Host.props" />
+</Project>

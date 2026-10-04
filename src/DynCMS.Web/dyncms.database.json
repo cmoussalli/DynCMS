@@ -1,6 +1,0 @@
-{
-  "Provider": "Sqlite",
-  "Sqlite": {
-    "DatabasePath": "App_Data\\dyncms.db"
-  }
-}

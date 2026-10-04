@@ -1,4 +1,8 @@
 <Project>
+  <!-- What the Razor SDK would have generated here: expose this package's static web assets to the consumer. -->
+  <Import Project="$(MSBuildThisFileDirectory)Microsoft.AspNetCore.StaticWebAssetEndpoints.props" Condition="Exists('$(MSBuildThisFileDirectory)Microsoft.AspNetCore.StaticWebAssetEndpoints.props')" />
+  <Import Project="$(MSBuildThisFileDirectory)Microsoft.AspNetCore.StaticWebAssets.props" Condition="Exists('$(MSBuildThisFileDirectory)Microsoft.AspNetCore.StaticWebAssets.props')" />
+
   <!--
     Applied to every project that references the DynCMS.Host package (NuGet copies this file into build/ and
     buildTransitive/). A project that references DynCMS.Host through a ProjectReference imports it by hand.
@@ -16,6 +20,8 @@
       that leaves every component to DynCMS.Host - "dotnet new web" plus this package - has none, and the shell's
       <script src="_framework/blazor.web.js"> would fail, leaving /setup and /admin without interactivity.
     -->
+    <!-- NOTE: only effective when this file is imported before restore (the ProjectReference in DynCMS.Web). NuGet ignores
+         package props during restore, so a site using the package must also set this in its own .csproj. -->
     <RequiresAspNetWebAssets Condition="'$(RequiresAspNetWebAssets)' == ''">true</RequiresAspNetWebAssets>
   </PropertyGroup>
 </Project>

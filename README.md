@@ -40,6 +40,13 @@ cd MySite
 dotnet add package DynCMS.Host
 ```
 
+Add this to the `<PropertyGroup>` of `MySite.csproj` (without it `/setup` and `/admin` render but no button reacts, see
+[DEVELOPER-GUIDE](DEVELOPER-GUIDE.md) §18):
+
+```xml
+<RequiresAspNetWebAssets>true</RequiresAspNetWebAssets>
+```
+
 Replace the whole of `Program.cs` (the template's `MapGet("/")` would otherwise shadow the CMS pages):
 
 ```csharp
