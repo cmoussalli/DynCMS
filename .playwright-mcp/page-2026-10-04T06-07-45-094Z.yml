@@ -1,0 +1,119 @@
+- generic [ref=f2e146]:
+  - banner [ref=f2e147]:
+    - link "D DynCMS Back office" [ref=f2e148] [cursor=pointer]:
+      - /url: /admin
+      - generic [ref=f2e149]: D
+      - generic [ref=f2e150]:
+        - strong [ref=f2e151]: DynCMS
+        - generic [ref=f2e152]: Back office
+    - navigation "Sections" [ref=f2e153]:
+      - link "Dashboard" [ref=f2e154] [cursor=pointer]:
+        - /url: /admin
+      - link "Content" [ref=f2e161] [cursor=pointer]:
+        - /url: /admin/content
+      - link "Media" [ref=f2e166] [cursor=pointer]:
+        - /url: /admin/media
+      - link "Analytics" [ref=f2e172] [cursor=pointer]:
+        - /url: /admin/analytics
+      - link "Settings" [ref=f2e176] [cursor=pointer]:
+        - /url: /admin/settings
+      - link "Users" [ref=f2e181] [cursor=pointer]:
+        - /url: /admin/users
+      - link "Files" [ref=f2e185] [cursor=pointer]:
+        - /url: /admin/files
+      - link "Data" [ref=f2e189] [cursor=pointer]:
+        - /url: /admin/data
+      - link "System" [ref=f2e195] [cursor=pointer]:
+        - /url: /admin/system
+    - generic [ref=f2e199]:
+      - link "View site" [ref=f2e200] [cursor=pointer]:
+        - /url: /
+      - generic [ref=f2e209]:
+        - generic [aria-hidden] [ref=f2e210]: AD
+        - generic [ref=f2e211]:
+          - strong [ref=f2e212]: admin
+          - generic [ref=f2e213]: Administrator
+        - link "Sign out" [ref=f2e214] [cursor=pointer]:
+          - /url: /admin/logout
+  - generic [ref=f2e219]:
+    - banner [ref=f2e220]:
+      - generic [ref=f2e221]:
+        - heading "Files" [level=1] [ref=f2e222]
+        - paragraph [ref=f2e225]:
+          - text: The files in the site's
+          - code [ref=f2e226]: wwwroot
+          - text: folder (stylesheets, scripts, images, fonts). Download folders as ZIP, upload a ZIP to extract it, and edit text files in place.
+    - generic [ref=f2e227]:
+      - generic [ref=f2e228]:
+        - navigation [ref=f2e229]:
+          - button "wwwroot" [ref=f2e230] [cursor=pointer]
+        - generic [ref=f2e233]:
+          - button "New folder" [ref=f2e234] [cursor=pointer]
+          - button "New file" [ref=f2e237] [cursor=pointer]
+          - generic "Upload a ZIP archive and extract it into this folder" [ref=f2e241] [cursor=pointer]:
+            - text: Upload ZIP
+            - button "Upload ZIP" [ref=f2e245]
+          - generic [ref=f2e246] [cursor=pointer]:
+            - text: Upload files
+            - button "Upload files" [active] [ref=f2e250]
+          - link "Download folder" [ref=f2e251] [cursor=pointer]:
+            - /url: /admin/files/download?path=
+      - table [ref=f2e256]:
+        - rowgroup [ref=f2e257]:
+          - row [ref=f2e258]:
+            - columnheader "Name" [ref=f2e259]
+            - columnheader "Size" [ref=f2e260]
+            - columnheader "Modified" [ref=f2e261]
+            - columnheader [ref=f2e262]
+        - rowgroup [ref=f2e263]:
+          - row [ref=f2e290]:
+            - cell "doc-logo.png" [ref=f2e291]
+            - cell "70 B" [ref=f2e297]
+            - cell "10/4/2026 10:07 AM" [ref=f2e298]
+            - cell [ref=f2e299]:
+              - link "Open in a new tab" [ref=f2e300] [cursor=pointer]:
+                - /url: /doc-logo.png
+              - link "Download" [ref=f2e305] [cursor=pointer]:
+                - /url: /admin/files/download?path=doc-logo.png
+              - button "Rename" [ref=f2e309] [cursor=pointer]
+              - button "Delete" [ref=f2e313] [cursor=pointer]
+          - row [ref=f2e316]:
+            - cell [ref=f2e317]:
+              - button "doc-test.css" [ref=f2e318] [cursor=pointer]
+            - cell "180 B" [ref=f2e323]
+            - cell "10/4/2026 10:07 AM" [ref=f2e324]
+            - cell [ref=f2e325]:
+              - button "Edit" [ref=f2e326] [cursor=pointer]
+              - link "Open in a new tab" [ref=f2e330] [cursor=pointer]:
+                - /url: /doc-test.css
+              - link "Download" [ref=f2e335] [cursor=pointer]:
+                - /url: /admin/files/download?path=doc-test.css
+              - button "Rename" [ref=f2e339] [cursor=pointer]
+              - button "Delete" [ref=f2e343] [cursor=pointer]
+          - row [ref=f2e346]:
+            - cell [ref=f2e347]:
+              - button "doc-test.js" [ref=f2e348] [cursor=pointer]
+            - cell "156 B" [ref=f2e353]
+            - cell "10/4/2026 10:07 AM" [ref=f2e354]
+            - cell [ref=f2e355]:
+              - button "Edit" [ref=f2e356] [cursor=pointer]
+              - link "Open in a new tab" [ref=f2e360] [cursor=pointer]:
+                - /url: /doc-test.js
+              - link "Download" [ref=f2e365] [cursor=pointer]:
+                - /url: /admin/files/download?path=doc-test.js
+              - button "Rename" [ref=f2e369] [cursor=pointer]
+              - button "Delete" [ref=f2e373] [cursor=pointer]
+          - row [ref=f2e264]:
+            - cell "ss.cs" [ref=f2e265]
+            - cell "0 B" [ref=f2e271]
+            - cell "10/4/2026 8:16 AM" [ref=f2e272]
+            - cell [ref=f2e273]:
+              - link "Open in a new tab" [ref=f2e274] [cursor=pointer]:
+                - /url: /ss.cs
+              - link "Download" [ref=f2e279] [cursor=pointer]:
+                - /url: /admin/files/download?path=ss.cs
+              - button "Rename" [ref=f2e283] [cursor=pointer]
+              - button "Delete" [ref=f2e287] [cursor=pointer]
+  - generic [ref=f2e377]:
+    - strong [ref=f2e381]: Uploaded 3 file(s)
+    - button [ref=f2e382] [cursor=pointer]

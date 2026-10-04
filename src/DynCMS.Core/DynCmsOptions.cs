@@ -33,6 +33,12 @@ public sealed class DynCmsOptions
     /// <summary>Maximum accepted upload size in bytes.</summary>
     public long MaxUploadBytes { get; set; } = 20 * 1024 * 1024;
 
+    /// <summary>Largest file or ZIP archive (in bytes) the back office Files tab accepts as an upload.</summary>
+    public long MaxFilesUploadBytes { get; set; } = 200L * 1024 * 1024;
+
+    /// <summary>Most bytes a ZIP archive may expand to when extracted in the Files tab (guards against zip bombs).</summary>
+    public long MaxZipExtractBytes { get; set; } = 500L * 1024 * 1024;
+
     /// <summary>File extensions (with leading dot) that may be uploaded to the media library.</summary>
     public HashSet<string> AllowedUploadExtensions { get; set; } = new(StringComparer.OrdinalIgnoreCase)
     {

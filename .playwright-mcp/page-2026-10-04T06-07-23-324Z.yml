@@ -1,0 +1,79 @@
+- generic [ref=f2e2]:
+  - banner [ref=f2e3]:
+    - link "D DynCMS Back office" [ref=f2e4] [cursor=pointer]:
+      - /url: /admin
+      - generic [ref=f2e5]: D
+      - generic [ref=f2e6]:
+        - strong [ref=f2e7]: DynCMS
+        - generic [ref=f2e8]: Back office
+    - navigation "Sections" [ref=f2e9]:
+      - link "Dashboard" [ref=f2e10] [cursor=pointer]:
+        - /url: /admin
+      - link "Content" [ref=f2e17] [cursor=pointer]:
+        - /url: /admin/content
+      - link "Media" [ref=f2e22] [cursor=pointer]:
+        - /url: /admin/media
+      - link "Analytics" [ref=f2e28] [cursor=pointer]:
+        - /url: /admin/analytics
+      - link "Settings" [ref=f2e32] [cursor=pointer]:
+        - /url: /admin/settings
+      - link "Users" [ref=f2e37] [cursor=pointer]:
+        - /url: /admin/users
+      - link "Files" [ref=f2e41] [cursor=pointer]:
+        - /url: /admin/files
+      - link "Data" [ref=f2e45] [cursor=pointer]:
+        - /url: /admin/data
+      - link "System" [ref=f2e51] [cursor=pointer]:
+        - /url: /admin/system
+    - generic [ref=f2e55]:
+      - link "View site" [ref=f2e56] [cursor=pointer]:
+        - /url: /
+      - generic [ref=f2e65]:
+        - generic [aria-hidden] [ref=f2e66]: AD
+        - generic [ref=f2e67]:
+          - strong [ref=f2e68]: admin
+          - generic [ref=f2e69]: Administrator
+        - link "Sign out" [ref=f2e70] [cursor=pointer]:
+          - /url: /admin/logout
+  - generic [ref=f2e75]:
+    - banner [ref=f2e76]:
+      - generic [ref=f2e77]:
+        - heading "Files" [level=1] [ref=f2e78]
+        - paragraph [ref=f2e81]:
+          - text: The files in the site's
+          - code [ref=f2e82]: wwwroot
+          - text: folder (stylesheets, scripts, images, fonts). Download folders as ZIP, upload a ZIP to extract it, and edit text files in place.
+    - generic [ref=f2e83]:
+      - generic [ref=f2e84]:
+        - navigation [ref=f2e85]:
+          - button "wwwroot" [ref=f2e86] [cursor=pointer]
+        - generic [ref=f2e89]:
+          - button "New folder" [ref=f2e90] [cursor=pointer]
+          - button "New file" [ref=f2e93] [cursor=pointer]
+          - generic "Upload a ZIP archive and extract it into this folder" [ref=f2e97] [cursor=pointer]:
+            - text: Upload ZIP
+            - button "Upload ZIP" [ref=f2e101]
+          - generic [ref=f2e102] [cursor=pointer]:
+            - text: Upload files
+            - button "Upload files" [ref=f2e106]
+          - link "Download folder" [ref=f2e107] [cursor=pointer]:
+            - /url: /admin/files/download?path=
+      - table [ref=f2e112]:
+        - rowgroup [ref=f2e113]:
+          - row [ref=f2e114]:
+            - columnheader "Name" [ref=f2e115]
+            - columnheader "Size" [ref=f2e116]
+            - columnheader "Modified" [ref=f2e117]
+            - columnheader [ref=f2e118]
+        - rowgroup [ref=f2e119]:
+          - row [ref=f2e120]:
+            - cell "ss.cs" [ref=f2e121]
+            - cell "0 B" [ref=f2e127]
+            - cell "10/4/2026 8:16 AM" [ref=f2e128]
+            - cell [ref=f2e129]:
+              - link "Open in a new tab" [ref=f2e130] [cursor=pointer]:
+                - /url: /ss.cs
+              - link "Download" [ref=f2e135] [cursor=pointer]:
+                - /url: /admin/files/download?path=ss.cs
+              - button "Rename" [ref=f2e139] [cursor=pointer]
+              - button "Delete" [ref=f2e143] [cursor=pointer]

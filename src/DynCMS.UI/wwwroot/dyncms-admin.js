@@ -47,6 +47,39 @@ export const rte = {
     }
 };
 
+export const codeEditor = {
+    // Tab indents (Shift+Tab outdents the current line), Ctrl/Cmd+S asks the component to save.
+    init(textarea, dotnetRef) {
+        if (!textarea || textarea.__dcInit) return;
+        textarea.__dcInit = true;
+        const changed = () => textarea.dispatchEvent(new Event('input', { bubbles: true }));
+        textarea.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+                e.preventDefault();
+                dotnetRef.invokeMethodAsync('SaveAsync');
+                return;
+            }
+            if (e.key !== 'Tab') return;
+            e.preventDefault();
+            const { selectionStart: start, selectionEnd: end, value } = textarea;
+            if (e.shiftKey || start !== end) {
+                const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+                const block = value.slice(lineStart, end);
+                const lines = block.split('\n');
+                const next = e.shiftKey
+                    ? lines.map(l => l.replace(/^(  |\t)/, ''))
+                    : lines.map(l => '  ' + l);
+                const text = next.join('\n');
+                textarea.setRangeText(text, lineStart, end, 'select');
+            } else {
+                textarea.setRangeText('  ', start, end, 'end');
+            }
+            changed();
+        });
+        textarea.focus();
+    }
+};
+
 export function focusElement(element) {
     if (element) element.focus();
 }

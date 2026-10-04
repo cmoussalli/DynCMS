@@ -1,6 +1,6 @@
 name: Publish NuGet packages
 
-# Publishes DynCMS.Core and DynCMS.UI to nuget.org.
+# Publishes DynCMS.Plugins.Sdk, DynCMS.Core, DynCMS.UI and DynCMS.Host to nuget.org.
 # Trigger: publish a GitHub release (tag like v0.2.0) or push a tag v*, or run manually.
 # The package version comes from the tag (leading "v" stripped); for a manual run
 # it comes from the "version" input, falling back to <Version> in Directory.Build.props.
@@ -43,7 +43,7 @@ jobs:
           echo "Version override: '${VERSION:-<none, using Directory.Build.props>}'"
 
       - name: Restore
-        run: dotnet restore src/DynCMS.Plugins.Sdk/DynCMS.Plugins.Sdk.csproj && dotnet restore src/DynCMS.Core/DynCMS.Core.csproj && dotnet restore src/DynCMS.UI/DynCMS.UI.csproj
+        run: dotnet restore src/DynCMS.Plugins.Sdk/DynCMS.Plugins.Sdk.csproj && dotnet restore src/DynCMS.Core/DynCMS.Core.csproj && dotnet restore src/DynCMS.UI/DynCMS.UI.csproj && dotnet restore src/DynCMS.Host/DynCMS.Host.csproj
 
       - name: Pack DynCMS.Plugins.Sdk
         shell: bash
@@ -66,12 +66,20 @@ jobs:
           [[ -n "${{ steps.version.outputs.version }}" ]] && ARGS+=("-p:Version=${{ steps.version.outputs.version }}")
           dotnet pack src/DynCMS.UI/DynCMS.UI.csproj -c Release --no-restore -o ./nupkgs "${ARGS[@]}"
 
+      - name: Pack DynCMS.Host
+        shell: bash
+        run: |
+          ARGS=()
+          [[ -n "${{ steps.version.outputs.version }}" ]] && ARGS+=("-p:Version=${{ steps.version.outputs.version }}")
+          dotnet pack src/DynCMS.Host/DynCMS.Host.csproj -c Release --no-restore -o ./nupkgs "${ARGS[@]}"
+
       - uses: actions/upload-artifact@v4
         with:
           name: nupkgs
           path: ./nupkgs/*.nupkg
 
-      # The SDK first (Core and UI depend on it), then Core (UI depends on it), all at the same version.
+      # The SDK first (Core and UI depend on it), then Core (UI depends on it), then UI, and Host last
+      # (it depends on all three), all at the same version.
       - name: Push DynCMS.Plugins.Sdk
         run: dotnet nuget push "./nupkgs/DynCMS.Plugins.Sdk.*.nupkg" --api-key "${{ secrets.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
 
@@ -80,3 +88,6 @@ jobs:
 
       - name: Push DynCMS.UI
         run: dotnet nuget push "./nupkgs/DynCMS.UI.*.nupkg" --api-key "${{ secrets.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+      - name: Push DynCMS.Host
+        run: dotnet nuget push "./nupkgs/DynCMS.Host.*.nupkg" --api-key "${{ secrets.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate

@@ -87,7 +87,12 @@ public static class DynCmsHostExtensions
         {
             // Before routing on purpose: once an endpoint is matched (the /{*Path} catch-all page matches
             // anything) the static file middleware steps aside, so it has to run first.
-            app.UseStaticFiles();
+            // Files uploaded in the Files tab can have any extension; unknown ones are served as downloads instead of 404.
+            app.UseStaticFiles(new StaticFileOptions
+            {
+                ServeUnknownFileTypes = true,
+                DefaultContentType = "application/octet-stream"
+            });
             app.UseRouting();
         }
 
@@ -100,6 +105,7 @@ public static class DynCmsHostExtensions
         app.MapStaticAssets();
         app.MapDynCmsMedia();          // serves uploaded files from App_Data/media at /media
         app.MapDynCmsBackups();        // admin-only download of database backups (Data tab)
+        app.MapDynCmsFiles();          // admin-only download of wwwroot files and folders (Files tab)
         app.MapDynCmsAnalyticsExport(); // CSV export of page views (Analytics section)
         app.MapDynCmsApi();            // management REST API (+ OpenAPI) for integrations and AI agents
         app.MapDynCmsMcp();            // MCP server for AI agents, same tools as the API

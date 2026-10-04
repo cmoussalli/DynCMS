@@ -22,6 +22,9 @@ public static class ApplicationBuilderExtensions
     /// <summary>Route of the backup download endpoint mapped by <see cref="MapDynCmsBackups"/>; <c>{name}</c> is the backup file name.</summary>
     public const string BackupDownloadPattern = "/admin/data/backups/download/{name}";
 
+    /// <summary>Route of the wwwroot download endpoint mapped by <see cref="MapDynCmsFiles"/> (query: <c>path</c>, relative to wwwroot).</summary>
+    public const string FileDownloadPattern = "/admin/files/download";
+
     /// <summary>Route of the analytics CSV export mapped by <see cref="MapDynCmsAnalyticsExport"/> (query: <c>from</c>, <c>to</c> as ISO dates, <c>bots=true</c>).</summary>
     public const string AnalyticsExportPattern = "/admin/analytics/export";
 
@@ -178,6 +181,45 @@ public static class ApplicationBuilderExtensions
             var backup = maintenance.FindBackup(name);
             if (backup is null || !backup.IsLocalFile) return Results.NotFound();
             return Results.File(backup.FullPath, "application/octet-stream", backup.FileName, enableRangeProcessing: true);
+        }).RequireAuthorization(new AuthorizeAttribute { Roles = CmsRoles.Admin });
+    }
+
+    /// <summary>
+    /// Lets administrators download a file from <c>wwwroot</c>, or a folder as a ZIP archive, from the Files tab
+    /// (<c>/admin/files/download?path=…</c>; an empty path is the whole <c>wwwroot</c>).
+    /// </summary>
+    public static IEndpointConventionBuilder MapDynCmsFiles(this IEndpointRouteBuilder endpoints)
+    {
+        return endpoints.MapGet(FileDownloadPattern, async (string? path, IWebRootFileService files, HttpContext http, CancellationToken ct) =>
+        {
+            var file = files.FindFile(path ?? string.Empty);
+            if (file is not null)
+            {
+                var contentTypes = new FileExtensionContentTypeProvider();
+                if (!contentTypes.TryGetContentType(file, out var contentType)) contentType = "application/octet-stream";
+                return Results.File(file, contentType, Path.GetFileName(file), enableRangeProcessing: true);
+            }
+
+            // ZipArchive writes synchronously, so build the archive in a temp file (deleted once sent).
+            var temp = new FileStream(Path.Combine(Path.GetTempPath(), "dyncms-" + Guid.NewGuid().ToString("N") + ".zip"),
+                FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 81920, FileOptions.DeleteOnClose | FileOptions.Asynchronous);
+            try
+            {
+                await files.ZipFolderAsync(path ?? string.Empty, temp, ct);
+            }
+            catch (InvalidOperationException)
+            {
+                await temp.DisposeAsync();
+                return Results.NotFound();
+            }
+            catch
+            {
+                await temp.DisposeAsync();
+                throw;
+            }
+            temp.Position = 0;
+            var name = string.IsNullOrEmpty(path) ? "wwwroot" : Path.GetFileName(path.TrimEnd('/', '\\'));
+            return Results.File(temp, "application/zip", name + ".zip");
         }).RequireAuthorization(new AuthorizeAttribute { Roles = CmsRoles.Admin });
     }
 

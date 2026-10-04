@@ -90,6 +90,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IDatabaseMaintenanceService, DatabaseMaintenanceService>();
 
         services.TryAddSingleton<IMediaStorage, FileSystemMediaStorage>();
+        services.TryAddSingleton<IWebRootFileService, WebRootFileService>();
         services.TryAddScoped<ILanguageService, LanguageService>();
         services.TryAddSingleton<DictionaryCache>();
         services.TryAddScoped<IDictionaryService, DictionaryService>();
