@@ -1,4 +1,4 @@
-namespace DynCMS.Core.Models;
+namespace DynCMS.Plugins.Models;
 
 /// <summary>
 /// One entry of the dictionary (Settings → Dictionary), modelled on Umbraco's dictionary: a <see cref="Key"/> that

@@ -1,5 +1,5 @@
-using DynCMS.Core.Helpers;
-using DynCMS.Core.Models;
+using DynCMS.Plugins.Helpers;
+using DynCMS.Plugins.Models;
 using DynCMS.Core.Security;
 using DynCMS.Core.Services;
 using DynCMS.Core.Templates;

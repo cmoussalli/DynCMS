@@ -6,11 +6,20 @@
     @page "/guestbook" is served at exactly that URL) and otherwise resolved against the content tree.
     Admin routes (/admin/...) and /setup live in the DynCMS.UI assembly and take precedence
     because literal route segments win over the catch-all parameter.
+
+    The plugin slots site.head (inside the page head) and site.body-end (after the page content) are rendered here,
+    so they work with any site layout.
 *@
+
+<HeadContent>
+    <PluginSlot Name="@PluginSlots.SiteHead" />
+</HeadContent>
 
 <PluginPageOutlet Path="@("/" + Path)" Admin="false">
     <CmsContentRenderer Path="@Path" Preview="@Preview" />
 </PluginPageOutlet>
+
+<PluginSlot Name="@PluginSlots.SiteBodyEnd" />
 
 @code {
     [Parameter] public string? Path { get; set; }

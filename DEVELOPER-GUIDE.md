@@ -901,12 +901,12 @@ the resolution chain both the content query and the dictionary use.
 
 ### Helpers
 
-**`Slug`** (`DynCMS.Core.Helpers`): `ToUrlSegment(text)` transliterates `ä ö ü ß æ ø å œ þ ð` (both cases),
+**`Slug`** (`DynCMS.Plugins.Helpers`): `ToUrlSegment(text)` transliterates `ä ö ü ß æ ø å œ þ ð` (both cases),
 strips diacritics (NFD, non-spacing marks removed), lower-cases, replaces every run of `[^a-z0-9]` with `-`,
 collapses and trims dashes. Non-Latin scripts vanish entirely and produce `""` (callers substitute `page` or `file`).
 `ToAlias(text)` camel-cases the segment parts and prefixes a leading digit with `p`.
 
-**`Paging`** (`DynCMS.Core.Helpers`): `PageParameter = "page"`; `Page<T>(source, pageSize, page?)` returns
+**`Paging`** (`DynCMS.Plugins.Helpers`): `PageParameter = "page"`; `Page<T>(source, pageSize, page?)` returns
 `PagedList<T>` (enumerates the whole source; `pageSize` clamped ≥ 1, `page` clamped into range); `ParsePage(string?)`,
 `ParsePage(Uri, parameter)`, `PageUrl(Uri, page, parameter)`, `PageUrl(path, query?, page, parameter)` (page 1 drops
 the parameter), `PageNumbers(page, pageCount, window = 2)` (every page when `pageCount ≤ 2·window + 5`, else
@@ -2555,9 +2555,15 @@ the sample is `samples/DynCMS.Plugin.Guestbook`.
    `PackDynCmsPlugin` target (25.2). Anything else the plugin uses (Entity Framework Core, say) is an ordinary
    `PackageReference` at the version the site ships; it is not copied into the package because the site provides it.
    Razor does not pick the global usings up for component tags: put `@using DynCMS.Plugins`,
-   `@using DynCMS.Plugins.Components` and `@using DynCMS.Plugins.Services` into the plugin's `_Imports.razor`, or
-   `<Icon>` renders as an unknown HTML element and shows nothing (no build error).
-   The SDK exposes, besides the contract: `Icon` (the back office icon set), `ToastService` and `CmsRoles`. Plugin pages
+   `@using DynCMS.Plugins.Components` and `@using DynCMS.Plugins.Services` into the plugin's `_Imports.razor`
+   (the SDK turns the warning RZ10012, "unexpected element name", into a build error so a missing `@using` cannot ship
+   as an invisible `<icon>` tag).
+   The SDK exposes, besides the contract: the content services and models (`IContentService`, `IContentTypeService`,
+   `IMediaService`, `ILanguageService`, `IDictionaryService`, `ITemplateService`, `IPublishedContentQuery`,
+   `ICultureContext`; namespaces `DynCMS.Plugins.Services` and `DynCMS.Plugins.Models`), `Slug` and `Paging`
+   (`DynCMS.Plugins.Helpers`), the registries `IPropertyEditorRegistry` and `ITemplateRegistry`, the components `Icon`,
+   `Modal`, `ConfirmDialog`, `PropertyEditorBase`, `ToastService`, `CmsRoles`, the extension slots and `ICmsEventHandler`
+   (25.4). Everything a plugin normally needs is there; reference `DynCMS.Core` only for internals you accept breaking on. Plugin pages
    get their `dc-*` CSS classes from the site's back office stylesheet.
 2. Add **one** public class deriving from `DynCmsPlugin` (or implementing `IDynCmsPlugin`) with a parameterless
    constructor. Metadata (`Name`, `Description`, `Version`, `Author`) defaults to the assembly attributes
@@ -2581,13 +2587,17 @@ the sample is `samples/DynCMS.Plugin.Guestbook`.
 | `StopAsync(IPluginContext, ct)` | before the services are disposed |
 | `MenuItems` | `PluginMenuItem(Title, Url, Icon, Placement, Roles, Order)`: top bar (`Main`) or the Settings tree (`Settings`); `Roles` is a comma-separated role list, null = every signed-in user |
 | `Icon` | a name from `Icon.razor`'s set |
+| `PropertyEditors` | `PropertyEditorDefinition`s the plugin brings (25.4) |
+| `Templates` | component `TemplateDefinition`s the plugin brings (25.4) |
+| `UiExtensions` | `PluginUiExtension(Slot, ComponentType, Order, Roles)`: components for the dashboard, the content editor and every site page (25.4) |
 
 4. Add pages as ordinary components with `@page`. A template that starts with `/admin/` is a **back-office page**:
    it renders inside `AdminLayout` for signed-in users (any role; check roles yourself with `AuthorizeView` when needed).
    Any other template is a **site page** rendered inside the host's site layout. Route parameters and constraints
    (`{id:int}`, `{slug}`, `{**rest}`), `[SupplyParameterFromQuery]`, `@layout` (nested inside the host layout),
-   `PageTitle` and `HeadContent` all work. Use the `dc-*` classes and `DynCMS.UI.Admin.Components` (`Icon`, `Modal`,
-   `ConfirmDialog`, `ToastService`) in admin pages so they look native.
+   `PageTitle` and `HeadContent` all work, also in the prerendered HTML. A site page is also served under a language
+   prefix (`/de/guestbook` reaches `/guestbook`; the language comes from `ICultureContext`). Use the `dc-*` classes and
+   the SDK's `Icon`, `Modal`, `ConfirmDialog` and `ToastService` in admin pages so they look native.
 5. Optional: a `wwwroot` folder (served at `/_content/{id}/…`, the RCL convention, so `<link href="_content/My.Plugin/x.css">`
    works), `[ApiController]` classes, `IHostedService` registrations (started and stopped with the plugin), a
    `settings.json` next to the binaries (see `IPluginContext.Configuration`).
@@ -2659,7 +2669,7 @@ plugin, built from the `IServiceCollection` the plugin filled). A type defined i
 sides. Lifetimes are honoured: singletons live in the plugin container (disposed when it stops), scoped instances in
 the wrapper scope (disposed with it), transients are tracked like the built-in container does; scoped-from-root throws
 when `ValidateScopes` is on. Implementation types are constructed with `ActivatorUtilities` against the wrapper, so a
-plugin service's constructor may take host and plugin services alike. Keyed services inside plugins are not supported.
+plugin service's constructor may take host and plugin services alike. Keyed services (`AddKeyedSingleton<T>(key, …)`, `[Inject(Key = …)]`, `[FromKeyedServices]`) work: a type the plugin owns is answered by the plugins first, any other type by the application first, and `IEnumerable<T>` under a key merges both.
 
 Three scopes matter and all three had to be pointed at the wrapper: (1) the root, which `IHost.Services`,
 `app.Services` and `IPluginContext.Services` are; (2) request scopes, created by `DefaultHttpContextFactory`, which
@@ -2669,10 +2679,17 @@ parameter is bound as a service, not as a body); (3) Blazor circuit scopes, crea
 `Microsoft.AspNetCore.Components.Server.Circuits.CircuitFactory`, which the factory re-registers the same way by
 reflection. Should a future ASP.NET Core rename that type, `PluginContainerRegistry.CircuitScopesRedirected` becomes
 false, `@inject` of plugin services in interactive components stops working, and plugins fall back to
-`IPluginContext.Services`; everything else keeps working. Static prerendering renders with the request scope's *inner*
-provider (the `EndpointHtmlRenderer` is built by the application container), so `PluginPageOutlet` mounts the plugin
-component only once the circuit is interactive (`OnAfterRender`, never called during prerendering) and shows a spinner
-until then; plugin pages therefore are not prerendered and are not visible without JavaScript.
+`IPluginContext.Services`; everything else keeps working.
+
+**Prerendering.** Static prerendering renders with the request scope's *inner* provider (the `EndpointHtmlRenderer` is
+built by the application container), which does not know the plugins' services. `PluginComponentView` (used for plugin
+pages and slot components) therefore creates the component directly only when `RendererInfo.IsInteractive` (the
+circuit); in every other case it asks `IPluginComponentRenderer`, which creates a scope of the plugin-aware provider,
+forwards the caller's `NavigationManager` and `AuthenticationStateProvider`, renders `PluginPrerenderFrame` with a
+separate `HtmlRenderer` and returns the HTML. The page, its `PageTitle` and its `HeadContent` (collected by a
+`HeadOutlet` inside the frame and handed to the real head) are in the server-rendered HTML; the circuit replaces it when
+it starts, so a plugin page's `OnInitializedAsync` runs twice (prerender and circuit), like any prerendered component.
+A component that throws during the prerender is logged and skipped (it then appears when the page turns interactive).
 
 **Pages** (`PluginRouter`, `PluginPageOutlet`, `PluginPageHost`, `CmsPage`). Plugin assemblies are deliberately
 *not* given to Blazor's `Router` (its route table cache would pin them, and the endpoint side is fixed at startup).
@@ -2682,8 +2699,9 @@ component with `DynamicComponent` (route values converted to the `[Parameter]` t
 own `@layout` wrapped in a `LayoutView`). The router is built when plugins start: every `[Route]` on an `IComponent` is
 parsed with `TemplateParser`, matched with `TemplateMatcher`, constraints resolved through the application's
 `IInlineConstraintResolver`, and ordered by `RoutePrecedence.ComputeInbound`. Because literal routes beat catch-alls,
-built-in pages always win over a plugin page with the same URL, and a plugin cannot shadow `/admin/content`. Paths
-with a language prefix (`/de/guestbook`) are not matched against plugin pages.
+built-in pages always win over a plugin page with the same URL, and a plugin cannot shadow `/admin/content`. A site path
+that matches no plugin page is retried without its first segment when that segment is a configured language
+(`/de/guestbook` → `/guestbook`).
 
 **Endpoints and controllers** (`PluginEndpoints.cs`). `MapEndpoints` receives a `PluginEndpointRouteBuilder`: a
 private `IEndpointRouteBuilder` whose `DataSources` the plugin's `MapGet`/`MapGroup` calls fill. `PluginManager`
@@ -2701,14 +2719,59 @@ re-scan. Static files: `MapDynCmsPlugins()` maps `{StaticAssetsRequestPath}/{plu
 access. Plugin admin pages are behind `[Authorize]` (any signed-in user); a plugin that needs more checks roles itself.
 Plugin site pages and endpoints are as public as the plugin makes them.
 
-### 25.4 Limitations
+### 25.4 Extending the CMS from a plugin
+
+Everything below is registered when the plugin starts and removed when it stops; nothing needs a restart.
+
+**Content and media.** The services listed in 25.1 are ordinary injectable services (`@inject IContentService Content`
+in a component, or a constructor parameter). A plugin can read and write the content tree, media, languages and
+dictionary, and create document types (`IContentTypeService`) from `StartAsync` to seed its own.
+
+**Reacting to changes.** Register an `ICmsEventHandler` in `ConfigureServices` (`services.AddSingleton<ICmsEventHandler, MyHandler>()`).
+`OnContentAsync(ContentEvent)` receives `Created`, `Saved`, `Published`, `Unpublished`, `Deleted` and `Moved` with the node
+(and the languages for publish/unpublish); `OnMediaAsync(MediaEvent)` receives `FolderCreated`, `Uploaded`, `Renamed`,
+`Deleted`. `ContentService` and `MediaService` publish them through `ICmsEventDispatcher` after the change is saved, in
+the calling request. Handlers run one after the other; one that throws is logged and skipped. The site can register
+handlers the same way in its own startup code (they run first). A handler must be resolvable from the root provider
+(singleton or transient).
+
+**Property editors.** `PropertyEditors` returns `PropertyEditorDefinition`s with a `ComponentType` deriving from
+`PropertyEditorBase` (`Value`, `ValueChanged`, `Property`, `Invalid`; `Config("key")` reads the editor settings declared in
+`ConfigFields`). They show up in the property editor drop-down of the document type editor next to the built-in ones. An
+alias that already exists is ignored with a warning (a plugin cannot replace a built-in). While the plugin is stopped a
+property that uses its editor falls back to a plain text box and keeps its value.
+
+**Templates.** `Templates` returns component `TemplateDefinition`s (`new("alias", "Name", typeof(MyTemplate))`); content can
+pick them like code templates, and the component receives `[Parameter] PublishedContent Content`. A stored (Liquid) template
+with the same alias still wins. Removed on stop; content that uses the alias then renders with the default template.
+
+**Components in the UI (slots).** `UiExtensions` returns `PluginUiExtension(Slot, ComponentType, Order, Roles)`:
+
+| Slot (`PluginSlots`) | Where | Parameters |
+|---|---|---|
+| `AdminDashboard` | below the dashboard cards | none |
+| `AdminContentEditor` | below the content editor, above the Save bar | `Guid ContentId` (declare it to receive it) |
+| `SiteHead` | inside the `<head>` of every site page | none; render plain tags (`<meta>`, `<link>`, `<script type="application/ld+json">`), not `HeadContent` |
+| `SiteBodyEnd` | after the content of every site page | none |
+
+The site slots are rendered by `CmsPage`, so they work with any site layout (including a custom one). A slot component is
+isolated by an error boundary and, when `Roles` is set, shown only to those roles. A plugin (or the site) can define slots
+of its own and render them with `<PluginSlot Name="my.slot" Parameters="@dict" />` (the component is in `DynCMS.UI`);
+`IPluginUiExtensions.For(slot)` lists what is registered. The slots appear and disappear live when a plugin starts or stops.
+
+**Not extensible from a plugin (by design).** The host's own option types (`Configure<DynCmsOptions>()` from a plugin has no
+effect: the options are built by the application container at startup), `IMediaStorage` and other host services a plugin
+registers under a host type (the host's registration wins; a plugin type or a keyed registration is the way to add a
+second implementation), and replacing built-in admin screens (add pages, panels and slots instead).
+
+### 25.5 Limitations
 
 - No isolation: a plugin runs in-process with the application's rights and can call anything.
 - Unload is best effort (see above); replace binaries and *Reload* freely in development, restart before measuring memory.
-- Plugin pages are interactive-only (no prerender), so they are not indexable without JavaScript and show a spinner first.
-- One plugin per assembly; a plugin cannot register `IDynCmsStartupTask`s, templates or property editors in the host
-  registries (those are fixed at startup) — use `StartAsync` for seeding.
+- One plugin per assembly. A plugin's `StartAsync` is its startup task (it runs after the database is ready, on every
+  start); `IDynCmsStartupTask`s are for the site.
+- Plugin pages render twice on a first visit (prerender, then the circuit), so `OnInitializedAsync` should be idempotent;
+  components that depend on the browser (JavaScript interop) must wait for `OnAfterRenderAsync` as usual.
 - Plugins must be built against the same DynCMS (and framework) version the site runs; shared assemblies are always
   the host's copy.
-- Keyed services, `IHostedService`s registered by the host and `Configure<T>()` of *host* option types from a plugin are
-  not supported.
+- `IHostedService`s registered by the host and `Configure<T>()` of *host* option types from a plugin are not supported (25.4).

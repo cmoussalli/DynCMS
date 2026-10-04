@@ -1,6 +1,6 @@
-using DynCMS.Core.Helpers;
+using DynCMS.Plugins.Helpers;
 
-namespace DynCMS.Core.Models;
+namespace DynCMS.Plugins.Models;
 
 /// <summary>
 /// Read-only view of a content node as the public site sees it, in one language. Values come from the

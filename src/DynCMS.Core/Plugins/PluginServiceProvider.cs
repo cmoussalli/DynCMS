@@ -202,6 +202,7 @@ internal sealed class PluginContainer : IDisposable
 {
     private readonly Dictionary<Type, List<ServiceDescriptor>> _closed = [];
     private readonly Dictionary<Type, List<ServiceDescriptor>> _open = [];
+    private readonly Dictionary<(Type, object), List<ServiceDescriptor>> _keyed = [];
     private readonly ConcurrentDictionary<(ServiceDescriptor, Type), Lazy<object>> _singletons = new();
     private readonly PluginScopeState _root;
     private readonly bool _validateScopes;
@@ -214,7 +215,14 @@ internal sealed class PluginContainer : IDisposable
         _root = new PluginScopeState(rootProvider, isRoot: true);
         foreach (var d in services)
         {
-            if (d.IsKeyedService) continue; // keyed services are not supported inside plugins
+            if (d.IsKeyedService)
+            {
+                if (d.ServiceKey is null || d.ServiceType.IsGenericTypeDefinition) continue; // null keys mean "not keyed"; open generics are not supported with keys
+                var keyedKey = (d.ServiceType, d.ServiceKey);
+                if (!_keyed.TryGetValue(keyedKey, out var keyedList)) _keyed[keyedKey] = keyedList = [];
+                keyedList.Add(d);
+                continue;
+            }
             var map = d.ServiceType.IsGenericTypeDefinition ? _open : _closed;
             if (!map.TryGetValue(d.ServiceType, out var list)) map[d.ServiceType] = list = [];
             list.Add(d);
@@ -223,7 +231,7 @@ internal sealed class PluginContainer : IDisposable
 
     public string PluginId { get; }
     public AssemblyLoadContext LoadContext { get; }
-    public int ServiceCount => _closed.Values.Sum(l => l.Count) + _open.Values.Sum(l => l.Count);
+    public int ServiceCount => _closed.Values.Sum(l => l.Count) + _open.Values.Sum(l => l.Count) + _keyed.Values.Sum(l => l.Count);
 
     public bool Owns(Type type)
     {
@@ -255,6 +263,22 @@ internal sealed class PluginContainer : IDisposable
         return descriptor is null ? null : Activate(descriptor, type, scope);
     }
 
+    public bool IsKeyedService(Type type, object? key) =>
+        key is not null && _keyed.ContainsKey((type, key));
+
+    /// <summary>The last registration of <paramref name="type"/> under <paramref name="key"/>, or null.</summary>
+    public object? ResolveKeyed(Type type, object? key, PluginScopeState scope) =>
+        key is not null && _keyed.TryGetValue((type, key), out var list) && list.Count > 0 ? Activate(list[^1], type, scope) : null;
+
+    /// <summary>Every registration of <paramref name="itemType"/> under <paramref name="key"/>, in registration order.</summary>
+    public List<object> ResolveAllKeyed(Type itemType, object? key, PluginScopeState scope)
+    {
+        var result = new List<object>();
+        if (key is not null && _keyed.TryGetValue((itemType, key), out var list))
+            foreach (var d in list) result.Add(Activate(d, itemType, scope));
+        return result;
+    }
+
     /// <summary>Every registration of <paramref name="itemType"/>, in registration order.</summary>
     public List<object> ResolveAll(Type itemType, PluginScopeState scope)
     {
@@ -281,7 +305,7 @@ internal sealed class PluginContainer : IDisposable
                 return _singletons.GetOrAdd((d, requested), key => new Lazy<object>(() =>
                 {
                     var instance = Create(key.Item1, key.Item2, _root);
-                    if (!ReferenceEquals(instance, key.Item1.ImplementationInstance)) _root.Track(instance);
+                    if (!ReferenceEquals(instance, InstanceOf(key.Item1))) _root.Track(instance);
                     return instance;
                 })).Value;
 
@@ -297,8 +321,17 @@ internal sealed class PluginContainer : IDisposable
         }
     }
 
+    private static object? InstanceOf(ServiceDescriptor d) => d.IsKeyedService ? d.KeyedImplementationInstance : d.ImplementationInstance;
+
     private static object Create(ServiceDescriptor d, Type requested, PluginScopeState scope)
     {
+        if (d.IsKeyedService)
+        {
+            if (d.KeyedImplementationInstance is not null) return d.KeyedImplementationInstance;
+            if (d.KeyedImplementationFactory is not null) return d.KeyedImplementationFactory(scope.Provider, d.ServiceKey);
+            var keyedImplementation = d.KeyedImplementationType ?? throw new InvalidOperationException($"Registration of '{d.ServiceType}' has no implementation.");
+            return ActivatorUtilities.CreateInstance(scope.Provider, keyedImplementation);
+        }
         if (d.ImplementationInstance is not null) return d.ImplementationInstance;
         if (d.ImplementationFactory is not null) return d.ImplementationFactory(scope.Provider);
 
@@ -367,6 +400,49 @@ internal static class PluginResolver
         return null;
     }
 
+    /// <summary>
+    /// Keyed lookup: a type the plugin owns is answered by the plugins first; any other type by the application first.
+    /// <c>IEnumerable&lt;T&gt;</c> merges the application's and every plugin's registrations under the key.
+    /// </summary>
+    public static object? ResolveKeyed(Type type, object? key, IServiceProvider host, PluginScopeState scope, PluginContainerRegistry registry)
+    {
+        var hostKeyed = host as IKeyedServiceProvider;
+        var containers = registry.Containers;
+        if (containers.Length == 0) return hostKeyed?.GetKeyedService(type, key);
+
+        if (type.IsConstructedGenericType && type.GetGenericTypeDefinition() == typeof(IEnumerable<>))
+        {
+            var item = type.GenericTypeArguments[0];
+            var all = new List<object>();
+            if (hostKeyed?.GetKeyedService(type, key) is IEnumerable fromHost) foreach (var o in fromHost) all.Add(o);
+            foreach (var c in containers) all.AddRange(c.ResolveAllKeyed(item, key, scope));
+            var array = Array.CreateInstance(item, all.Count);
+            for (var i = 0; i < all.Count; i++) array.SetValue(all[i], i);
+            return array;
+        }
+
+        if (IsPluginOwned(type, containers, out var owner))
+        {
+            if (owner?.ResolveKeyed(type, key, scope) is { } own) return own;
+            foreach (var c in containers)
+                if (c != owner && c.ResolveKeyed(type, key, scope) is { } found) return found;
+            return hostKeyed?.GetKeyedService(type, key);
+        }
+
+        if (hostKeyed?.GetKeyedService(type, key) is { } fromHostFirst) return fromHostFirst;
+        foreach (var c in containers)
+            if (c.ResolveKeyed(type, key, scope) is { } found) return found;
+        return null;
+    }
+
+    public static bool IsKeyedService(Type type, object? key, IServiceProvider host, PluginContainerRegistry registry)
+    {
+        if (host.GetService<IServiceProviderIsKeyedService>()?.IsKeyedService(type, key) == true) return true;
+        foreach (var c in registry.Containers)
+            if (c.IsKeyedService(type, key)) return true;
+        return false;
+    }
+
     public static bool IsService(Type type, IServiceProvider host, PluginContainerRegistry registry)
     {
         if (host.GetService<IServiceProviderIsService>()?.IsService(type) == true) return true;
@@ -426,9 +502,11 @@ internal sealed class PluginHostServiceProvider :
     public object GetRequiredService(Type serviceType) =>
         GetService(serviceType) ?? throw new InvalidOperationException($"No service for type '{serviceType}' has been registered.");
 
-    public object? GetKeyedService(Type serviceType, object? serviceKey) => _host.GetKeyedService(serviceType, serviceKey);
+    public object? GetKeyedService(Type serviceType, object? serviceKey) =>
+        PluginResolver.ResolveKeyed(serviceType, serviceKey, _host, _rootState, _registry);
 
-    public object GetRequiredKeyedService(Type serviceType, object? serviceKey) => _host.GetRequiredKeyedService(serviceType, serviceKey);
+    public object GetRequiredKeyedService(Type serviceType, object? serviceKey) =>
+        GetKeyedService(serviceType, serviceKey) ?? throw new InvalidOperationException($"No service for type '{serviceType}' with key '{serviceKey}' has been registered.");
 
     public IServiceScope CreateScope()
     {
@@ -441,7 +519,7 @@ internal sealed class PluginHostServiceProvider :
     public bool IsService(Type serviceType) => PluginResolver.IsService(serviceType, _host, _registry);
 
     public bool IsKeyedService(Type serviceType, object? serviceKey) =>
-        _host.GetService<IServiceProviderIsKeyedService>()?.IsKeyedService(serviceType, serviceKey) == true;
+        PluginResolver.IsKeyedService(serviceType, serviceKey, _host, _registry);
 
     /// <summary>Called when a plugin stops: drops what it created at root level.</summary>
     internal void Release(PluginContainer container) => _rootState.Release(container);
@@ -481,10 +559,10 @@ internal sealed class PluginHostScope : IServiceScope, IAsyncDisposable, IServic
         GetService(serviceType) ?? throw new InvalidOperationException($"No service for type '{serviceType}' has been registered.");
 
     public object? GetKeyedService(Type serviceType, object? serviceKey) =>
-        (_hostScope.ServiceProvider as IKeyedServiceProvider)?.GetKeyedService(serviceType, serviceKey);
+        PluginResolver.ResolveKeyed(serviceType, serviceKey, _hostScope.ServiceProvider, _state, _root.Registry);
 
     public object GetRequiredKeyedService(Type serviceType, object? serviceKey) =>
-        _hostScope.ServiceProvider.GetRequiredKeyedService(serviceType, serviceKey);
+        GetKeyedService(serviceType, serviceKey) ?? throw new InvalidOperationException($"No service for type '{serviceType}' with key '{serviceKey}' has been registered.");
 
     public void Dispose()
     {

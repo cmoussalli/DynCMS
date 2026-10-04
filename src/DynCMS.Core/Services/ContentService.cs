@@ -1,12 +1,16 @@
+using DynCMS.Core.Plugins;
 using DynCMS.Core.Data;
-using DynCMS.Core.Helpers;
-using DynCMS.Core.Models;
+using DynCMS.Plugins.Helpers;
+using DynCMS.Plugins.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace DynCMS.Core.Services;
 
-public sealed class ContentService(IDbContextFactory<DynCmsDbContext> factory) : IContentService
+public sealed class ContentService(IDbContextFactory<DynCmsDbContext> factory, ICmsEventDispatcher? events = null) : IContentService
 {
+    private Task EmitAsync(ContentEventKind kind, ContentNode? node, IReadOnlyList<string>? cultures, CancellationToken ct) =>
+        events is null || node is null ? Task.CompletedTask : events.PublishAsync(new ContentEvent(kind, node, cultures), ct);
+
     private static IQueryable<ContentNode> WithType(IQueryable<ContentNode> q) =>
         q.Include(n => n.ContentType).ThenInclude(t => t.Properties.OrderBy(p => p.SortOrder));
 
@@ -185,7 +189,9 @@ public sealed class ContentService(IDbContextFactory<DynCmsDbContext> factory) :
         db.Entry(type).State = EntityState.Unchanged;
         db.ContentNodes.Add(node);
         await db.SaveChangesAsync(ct);
-        return (await GetAsync(node.Id, ct))!;
+        var created = (await GetAsync(node.Id, ct))!;
+        await EmitAsync(ContentEventKind.Created, created, null, ct);
+        return created;
     }
 
     public async Task<ContentNode> SaveAsync(ContentNode node, CancellationToken ct = default)
@@ -242,7 +248,9 @@ public sealed class ContentService(IDbContextFactory<DynCmsDbContext> factory) :
         target.UpdatedAt = now;
 
         await db.SaveChangesAsync(ct);
-        return (await GetAsync(node.Id, ct))!;
+        var saved = (await GetAsync(node.Id, ct))!;
+        await EmitAsync(ContentEventKind.Saved, saved, null, ct);
+        return saved;
     }
 
     public IReadOnlyList<ContentValidationError> Validate(ContentNode node, string? culture = null)
@@ -282,7 +290,9 @@ public sealed class ContentService(IDbContextFactory<DynCmsDbContext> factory) :
             node.PublishedAt = now;
             node.UpdatedAt = now;
             await db.SaveChangesAsync(ct);
-            return PublishResult.Ok((await GetAsync(id, ct))!);
+            var live = (await GetAsync(id, ct))!;
+            await EmitAsync(ContentEventKind.Published, live, null, ct);
+            return PublishResult.Ok(live);
         }
 
         var languages = await LanguageService.LoadAsync(db, ct);
@@ -332,7 +342,9 @@ public sealed class ContentService(IDbContextFactory<DynCmsDbContext> factory) :
         node.PublishedAt = now;
         node.UpdatedAt = now;
         await db.SaveChangesAsync(ct);
-        return PublishResult.Ok((await GetAsync(id, ct))!);
+        var published = (await GetAsync(id, ct))!;
+        await EmitAsync(ContentEventKind.Published, published, requested.Select(l => l.IsoCode).ToList(), ct);
+        return PublishResult.Ok(published);
     }
 
     public async Task<ContentNode?> UnpublishAsync(Guid id, string? culture = null, CancellationToken ct = default)
@@ -367,7 +379,9 @@ public sealed class ContentService(IDbContextFactory<DynCmsDbContext> factory) :
 
         node.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
-        return await GetAsync(id, ct);
+        var taken = await GetAsync(id, ct);
+        await EmitAsync(ContentEventKind.Unpublished, taken, culture is null ? null : [culture], ct);
+        return taken;
     }
 
     public async Task DeleteAsync(Guid id, CancellationToken ct = default)
@@ -380,6 +394,7 @@ public sealed class ContentService(IDbContextFactory<DynCmsDbContext> factory) :
         db.ContentNodes.RemoveRange(descendants);
         db.ContentNodes.Remove(node);
         await db.SaveChangesAsync(ct);
+        await EmitAsync(ContentEventKind.Deleted, node, null, ct);
     }
 
     public async Task MoveAsync(Guid id, int direction, CancellationToken ct = default)
@@ -397,6 +412,7 @@ public sealed class ContentService(IDbContextFactory<DynCmsDbContext> factory) :
         siblings.Insert(newIndex, node);
         for (var i = 0; i < siblings.Count; i++) siblings[i].SortOrder = i;
         await db.SaveChangesAsync(ct);
+        await EmitAsync(ContentEventKind.Moved, node, null, ct);
     }
 
     // ---- helpers ----

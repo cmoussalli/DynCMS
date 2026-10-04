@@ -1,9 +1,9 @@
-using DynCMS.Core.Models;
+using DynCMS.Plugins.Models;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace DynCMS.Core.Services;
+namespace DynCMS.Plugins.Services;
 
 /// <summary>
 /// The language the current request or Blazor circuit is working in. <see cref="IPublishedContentQuery"/> uses it

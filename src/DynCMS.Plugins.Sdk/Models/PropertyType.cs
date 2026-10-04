@@ -1,4 +1,4 @@
-namespace DynCMS.Core.Models;
+namespace DynCMS.Plugins.Models;
 
 /// <summary>A single property (field) on a <see cref="ContentType"/>.</summary>
 public class PropertyType

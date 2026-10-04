@@ -2,34 +2,24 @@
 @using DynCMS.Core.Plugins
 @implements IDisposable
 @inject IPluginRouter Router
+@inject ILanguageService Languages
 
 @*
     Mounts the page of a running plugin for a request path. The host pages (the back office's /admin/{**rest} and the
     site's catch-all) render this with the path; when no plugin page matches, the child content renders instead
     (the site's content renderer, or a "not found" panel).
 
-    The plugin component itself is only created once the circuit is interactive (OnAfterRender never runs during
-    prerendering): plugin services live in the plugin-aware scope of the circuit, and the static prerender pass has
-    no such scope. Until then a small placeholder is shown.
+    PluginComponentView creates the plugin component: directly in the interactive circuit, and as prerendered HTML
+    (through the plugin-aware service provider) before that, so plugin pages are part of the server-rendered page.
 *@
 
 @if (_match is null)
 {
     @ChildContent
 }
-else if (!_interactive)
-{
-    <div class="dc-plugin-loading" aria-busy="true"><span class="dc-spinner"></span></div>
-}
-else if (_match.Page.Layout is { } layout)
-{
-    <LayoutView Layout="layout">
-        <DynamicComponent Type="_match.Page.ComponentType" Parameters="_parameters" @key="_match.Page.ComponentType" />
-    </LayoutView>
-}
 else
 {
-    <DynamicComponent Type="_match.Page.ComponentType" Parameters="_parameters" @key="_match.Page.ComponentType" />
+    <PluginComponentView ComponentType="_match.Page.ComponentType" Layout="_match.Page.Layout" Parameters="_parameters" ForwardHead="true" @key="_match.Page.ComponentType" />
 }
 
 @code {
@@ -47,31 +37,43 @@ else
 
     private PluginPageMatch? _match;
     private Dictionary<string, object?> _parameters = [];
-    private bool _interactive;
 
     protected override void OnInitialized() => Router.Changed += OnRoutesChanged;
 
-    protected override void OnParametersSet() => Resolve();
+    protected override Task OnParametersSetAsync() => ResolveAsync();
 
-    protected override void OnAfterRender(bool firstRender)
-    {
-        if (firstRender)
-        {
-            _interactive = true;
-            StateHasChanged();
-        }
-    }
-
-    private void Resolve()
+    private async Task ResolveAsync()
     {
         var path = Path.Split('?')[0];
         _match = Router.Match(path, Admin);
+
+        // A site page also answers under a language prefix: /de/guestbook reaches the plugin page /guestbook. The
+        // plugin reads the language from ICultureContext (it derives it from the same prefix).
+        if (_match is null && !Admin)
+        {
+            var trimmed = path.Trim('/');
+            var slash = trimmed.IndexOf('/');
+            var first = slash < 0 ? trimmed : trimmed[..slash];
+            if (first.Length > 0)
+            {
+                try
+                {
+                    if ((await Languages.GetAllAsync()).Match(first) is not null)
+                        _match = Router.Match(slash < 0 ? "/" : "/" + trimmed[(slash + 1)..], Admin);
+                }
+                catch (InvalidOperationException)
+                {
+                    // the database is not ready; there are no languages to match
+                }
+            }
+        }
+
         _parameters = _match?.ComponentParameters() ?? [];
     }
 
-    private void OnRoutesChanged() => _ = InvokeAsync(() =>
+    private void OnRoutesChanged() => _ = InvokeAsync(async () =>
     {
-        Resolve();
+        await ResolveAsync();
         StateHasChanged();
     });
 

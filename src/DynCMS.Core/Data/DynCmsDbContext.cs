@@ -1,7 +1,7 @@
 using System.Text.Json;
 using DynCMS.Core.Api;
 using DynCMS.Core.Services;
-using DynCMS.Core.Models;
+using DynCMS.Plugins.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;

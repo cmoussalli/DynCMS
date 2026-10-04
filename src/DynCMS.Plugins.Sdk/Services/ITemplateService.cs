@@ -1,6 +1,6 @@
-using DynCMS.Core.Models;
+using DynCMS.Plugins.Models;
 
-namespace DynCMS.Core.Services;
+namespace DynCMS.Plugins.Services;
 
 /// <summary>Where a template is used: by content, by document types and by other templates.</summary>
 public sealed record TemplateUsage(

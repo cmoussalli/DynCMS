@@ -1,6 +1,6 @@
 using DynCMS.Core.Data;
-using DynCMS.Core.Helpers;
-using DynCMS.Core.Models;
+using DynCMS.Plugins.Helpers;
+using DynCMS.Plugins.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace DynCMS.Core.Services;

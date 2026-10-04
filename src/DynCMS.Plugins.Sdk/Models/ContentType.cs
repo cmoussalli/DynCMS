@@ -1,4 +1,4 @@
-namespace DynCMS.Core.Models;
+namespace DynCMS.Plugins.Models;
 
 /// <summary>
 /// A document type: the schema that describes which properties a content node has,

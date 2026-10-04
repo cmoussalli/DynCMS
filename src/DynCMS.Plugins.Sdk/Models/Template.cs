@@ -1,4 +1,4 @@
-namespace DynCMS.Core.Models;
+namespace DynCMS.Plugins.Models;
 
 /// <summary>What a stored template is for: a whole page, or a fragment rendered by another template.</summary>
 public enum TemplateRole

@@ -27,6 +27,10 @@
 
   <ItemGroup>
     <Using Include="DynCMS.Plugins" />
+    <Using Include="DynCMS.Plugins.Models" />
+    <Using Include="DynCMS.Plugins.Helpers" />
+    <Using Include="DynCMS.Plugins.PropertyEditors" />
+    <Using Include="DynCMS.Plugins.Templates" />
     <Using Include="DynCMS.Plugins.Components" />
     <Using Include="DynCMS.Plugins.Services" />
   </ItemGroup>

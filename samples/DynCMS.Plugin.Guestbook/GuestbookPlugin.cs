@@ -1,3 +1,4 @@
+using DynCMS.Plugin.Guestbook.Pages;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -26,6 +27,35 @@ public sealed class GuestbookPlugin : DynCmsPlugin
         new("Guestbook", "/admin/guestbook", Icon: "message")
     ];
 
+    /// <summary>A property editor: document types can use it for any text property (Settings → Document types).</summary>
+    public override IReadOnlyList<PropertyEditorDefinition> PropertyEditors =>
+    [
+        new PropertyEditorDefinition
+        {
+            Alias = "Guestbook.Stars",
+            Name = "Star rating",
+            Description = "Click to rate from 1 to the configured maximum (provided by the Guestbook plugin).",
+            Icon = "star",
+            ComponentType = typeof(StarRatingEditor),
+            ConfigFields = [new PropertyEditorConfigField("max", "Maximum stars", "Between 1 and 10, default 5.", ConfigFieldType.Number)]
+        }
+    ];
+
+    /// <summary>A component template: content can pick it as its template while the plugin runs.</summary>
+    public override IReadOnlyList<TemplateDefinition> Templates =>
+    [
+        new TemplateDefinition("guestbook.page", "Guestbook page", typeof(GuestbookTemplate), Description: "A page that links to the guestbook (provided by the Guestbook plugin).")
+    ];
+
+    /// <summary>Components in the back-office dashboard and content editor, and in the head and at the end of every site page.</summary>
+    public override IReadOnlyList<PluginUiExtension> UiExtensions =>
+    [
+        new(PluginSlots.AdminDashboard, typeof(GuestbookDashboardWidget)),
+        new(PluginSlots.AdminContentEditor, typeof(ContentInfoPanel), Roles: CmsRoles.Admin),
+        new(PluginSlots.SiteHead, typeof(SiteHeadTags)),
+        new(PluginSlots.SiteBodyEnd, typeof(SiteFooterLink))
+    ];
+
     /// <summary>
     /// The plugin's services. They can be injected into the plugin's components (<c>@inject GuestbookService</c>),
     /// endpoints and controllers, and may depend on anything the host registers (logging, options, CMS services).
@@ -38,6 +68,14 @@ public sealed class GuestbookPlugin : DynCmsPlugin
         // The database lives in the plugin's private data folder and survives updates of the plugin.
         services.AddDbContextFactory<GuestbookDbContext>(o => o.UseSqlite(context.SqliteConnectionString("guestbook.db")));
         services.AddScoped<GuestbookService>();
+
+        // Reacts to CMS changes: every ICmsEventHandler a plugin registers is called while the plugin runs.
+        services.AddSingleton<ActivityLog>();
+        services.AddSingleton<ICmsEventHandler, GuestbookEvents>();
+
+        // Keyed services work inside plugins: [Inject(Key = "short")] IEntryFormatter.
+        services.AddKeyedSingleton<IEntryFormatter, ShortEntryFormatter>("short");
+        services.AddKeyedSingleton<IEntryFormatter, LongEntryFormatter>("long");
     }
 
     /// <summary>Runs on every start, after the services are available: create the database when it is missing.</summary>

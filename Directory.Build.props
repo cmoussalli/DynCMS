@@ -5,5 +5,7 @@
     <Authors>DynCMS</Authors>
     <PackageTags>cms;blazor;aspnetcore;dyncms</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <!-- A component tag Razor cannot resolve (a missing @using) renders as an empty HTML element instead of failing; make it a build error. -->
+    <WarningsAsErrors>$(WarningsAsErrors);RZ10012</WarningsAsErrors>
   </PropertyGroup>
 </Project>

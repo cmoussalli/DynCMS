@@ -133,6 +133,10 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<PluginManager>();
         services.TryAddSingleton<IPluginManager>(sp => sp.GetRequiredService<PluginManager>());
         services.AddHostedService(sp => sp.GetRequiredService<PluginManager>());
+        services.TryAddSingleton<IPluginUiExtensions, PluginUiExtensionsService>();
+        services.TryAddSingleton<IPluginComponentRenderer, PluginComponentRenderer>();
+        services.TryAddSingleton<CmsEventDispatcher>();
+        services.TryAddSingleton<ICmsEventDispatcher>(sp => sp.GetRequiredService<CmsEventDispatcher>());
         services.AddControllers();
 
         // Stored templates: edited in the back office, rendered with Fluid (Liquid).

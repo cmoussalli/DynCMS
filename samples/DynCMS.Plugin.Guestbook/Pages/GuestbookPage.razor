@@ -3,13 +3,11 @@
 
 @*
     A site page: rendered inside the site's layout at /guestbook while the plugin runs. The stylesheet comes from the
-    plugin's wwwroot folder, which DynCMS serves at /_content/{plugin id}/.
+    plugin's wwwroot folder, which DynCMS serves at /_content/{plugin id}/; the plugin adds the link
+    to every site page's head through the site.head slot (Pages/SiteHeadTags.razor).
 *@
 
 <PageTitle>@Guestbook.Options.Title</PageTitle>
-<HeadContent>
-    <link rel="stylesheet" href="_content/DynCMS.Plugin.Guestbook/guestbook.css" />
-</HeadContent>
 
 <section class="gb">
     <h1>@Guestbook.Options.Title</h1>

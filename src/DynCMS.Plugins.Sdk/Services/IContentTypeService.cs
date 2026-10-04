@@ -1,6 +1,6 @@
-using DynCMS.Core.Models;
+using DynCMS.Plugins.Models;
 
-namespace DynCMS.Core.Services;
+namespace DynCMS.Plugins.Services;
 
 public interface IContentTypeService
 {

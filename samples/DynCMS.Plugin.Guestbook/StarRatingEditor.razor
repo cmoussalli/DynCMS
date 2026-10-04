@@ -1,0 +1,24 @@
+@inherits PropertyEditorBase
+
+@*
+    A property editor brought by the plugin (PropertyEditors in the plugin class). It derives from PropertyEditorBase
+    (from the SDK): Value is the stored text, SetValueAsync reports a change. Config("max") reads the editor
+    configuration of the property on the document type (declared in the editor's ConfigFields).
+*@
+
+<div class="dc-inline gb-stars" id="@InputId">
+    @for (var i = 1; i <= Max; i++)
+    {
+        var star = i;
+        <button type="button" class="dc-btn dc-btn-ghost" title="@star of @Max" @onclick="() => SetValueAsync(star == Current ? null : star.ToString())">
+            <span style="font-size:20px;color:@(star <= Current ? "#f59e0b" : "#cbd5e1")">★</span>
+        </button>
+    }
+    <span class="dc-muted">@(Current == 0 ? "not rated" : $"{Current} / {Max}")</span>
+</div>
+
+@code {
+    private int Max => Math.Clamp(ConfigInt("max") ?? 5, 1, 10);
+
+    private int Current => int.TryParse(Value, out var v) ? Math.Clamp(v, 0, Max) : 0;
+}

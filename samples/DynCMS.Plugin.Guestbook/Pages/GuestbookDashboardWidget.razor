@@ -1,0 +1,45 @@
+@inject GuestbookService Guestbook
+@inject ActivityLog Activity
+
+@*
+    A dashboard widget: DynCMS shows it in the back-office dashboard because the plugin lists it in UiExtensions
+    (slot PluginSlots.AdminDashboard). It is an ordinary component: it injects the plugin's own services, and the
+    keyed formatter registered with AddKeyedSingleton.
+*@
+
+<section class="dc-card" style="margin-top:18px">
+    <div class="dc-card-head">
+        <h3><Icon Name="message" Size="16" /> Guestbook</h3>
+        <a href="/admin/guestbook">Moderate <Icon Name="arrow-right" Size="13" /></a>
+    </div>
+    <p>
+        <strong>@_stats.Pending</strong> awaiting approval · <strong>@_stats.Approved</strong> published
+        @if (_latest is not null)
+        {
+            <br /><span class="dc-muted">Latest: @Short.Format(_latest)</span>
+        }
+    </p>
+    @if (Activity.Latest().Count > 0)
+    {
+        <h4 style="margin:12px 0 4px">Recent CMS activity <span class="dc-muted">(seen by this plugin)</span></h4>
+        <ul>
+            @foreach (var line in Activity.Latest())
+            {
+                <li>@line</li>
+            }
+        </ul>
+    }
+</section>
+
+@code {
+    [Inject(Key = "short")] private IEntryFormatter Short { get; set; } = default!;
+
+    private GuestbookStats _stats = new(0, 0, 0, null);
+    private GuestbookEntry? _latest;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _stats = await Guestbook.GetStatsAsync();
+        _latest = (await Guestbook.GetAllAsync()).FirstOrDefault();
+    }
+}

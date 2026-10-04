@@ -1,5 +1,5 @@
 using System.Text;
-using DynCMS.Core.Models;
+using DynCMS.Plugins.Models;
 using DynCMS.Core.PropertyEditors;
 
 namespace DynCMS.Core.Templates;

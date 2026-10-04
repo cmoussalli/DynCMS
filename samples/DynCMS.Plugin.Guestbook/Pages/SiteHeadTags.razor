@@ -1,0 +1,5 @@
+@inject Microsoft.Extensions.Options.IOptions<GuestbookOptions> Options
+
+@* Slot site.head: plain tags, DynCMS puts them into the head of every site page (do not use HeadContent here). *@
+<meta name="guestbook:title" content="@Options.Value.Title" />
+<link rel="stylesheet" href="/_content/DynCMS.Plugin.Guestbook/guestbook.css" />

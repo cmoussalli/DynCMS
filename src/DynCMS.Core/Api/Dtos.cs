@@ -2,7 +2,7 @@ using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
-using DynCMS.Core.Models;
+using DynCMS.Plugins.Models;
 
 namespace DynCMS.Core.Api;
 

@@ -1,0 +1,54 @@
+@namespace DynCMS.UI.Rendering
+@implements IDisposable
+@inject IPluginUiExtensions Extensions
+@inject AuthenticationStateProvider Auth
+
+@*
+    Renders the components running plugins put into a named slot (PluginSlots). Nothing renders when no plugin
+    provides the slot. A component that throws is contained and does not take the page down. Components restricted
+    to roles are skipped for everybody else.
+*@
+
+@foreach (var item in _items)
+{
+    <PluginComponentView @key="item" ComponentType="item.ComponentType" Parameters="Parameters" Isolate="true" />
+}
+
+@code {
+    /// <summary>The slot name, normally one of <see cref="PluginSlots"/>.</summary>
+    [Parameter, EditorRequired] public string Name { get; set; } = string.Empty;
+
+    /// <summary>Parameters offered to the slot's components; each component receives the ones it declares.</summary>
+    [Parameter] public IReadOnlyDictionary<string, object?>? Parameters { get; set; }
+
+    private IReadOnlyList<PluginUiExtension> _items = [];
+
+    protected override void OnInitialized() => Extensions.Changed += OnChanged;
+
+    protected override async Task OnParametersSetAsync() => _items = await ResolveAsync();
+
+    private async Task<IReadOnlyList<PluginUiExtension>> ResolveAsync()
+    {
+        var all = Extensions.For(Name);
+        if (all.Count == 0) return all;
+
+        System.Security.Claims.ClaimsPrincipal? user = null;
+        if (all.Any(x => !string.IsNullOrWhiteSpace(x.Roles)))
+        {
+            try { user = (await Auth.GetAuthenticationStateAsync()).User; }
+            catch (InvalidOperationException) { /* no authentication state available: treat as anonymous */ }
+        }
+
+        return all.Where(x => string.IsNullOrWhiteSpace(x.Roles)
+                              || (user is not null && x.Roles.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Any(user.IsInRole)))
+            .ToList();
+    }
+
+    private void OnChanged() => _ = InvokeAsync(async () =>
+    {
+        _items = await ResolveAsync();
+        StateHasChanged();
+    });
+
+    public void Dispose() => Extensions.Changed -= OnChanged;
+}

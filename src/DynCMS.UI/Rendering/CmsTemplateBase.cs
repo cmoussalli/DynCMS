@@ -1,4 +1,4 @@
-using DynCMS.Core.Models;
+using DynCMS.Plugins.Models;
 using DynCMS.Core.Services;
 using Microsoft.AspNetCore.Components;
 

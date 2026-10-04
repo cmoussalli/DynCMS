@@ -1,4 +1,4 @@
-namespace DynCMS.Core.PropertyEditors;
+namespace DynCMS.Plugins.PropertyEditors;
 
 public enum ConfigFieldType
 {

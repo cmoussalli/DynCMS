@@ -1,6 +1,6 @@
-using DynCMS.Core.Models;
+using DynCMS.Plugins.Models;
 
-namespace DynCMS.Core.Services;
+namespace DynCMS.Plugins.Services;
 
 /// <summary>
 /// The dictionary (Settings → Dictionary): translated texts that templates print by key, in the language of the

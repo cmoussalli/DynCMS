@@ -1,4 +1,4 @@
-using DynCMS.Core.Models;
+using DynCMS.Plugins.Models;
 using DynCMS.Core.Security;
 
 namespace DynCMS.Core.Api;

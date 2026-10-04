@@ -1,7 +1,7 @@
 using System.Reflection;
 using DynCMS.Core.Analytics;
 using DynCMS.Core.Data;
-using DynCMS.Core.Models;
+using DynCMS.Plugins.Models;
 using DynCMS.Core.Plugins;
 using DynCMS.Core.PropertyEditors;
 using DynCMS.Core.Security;

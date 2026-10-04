@@ -10,6 +10,9 @@
     <IsPackable Condition="'$(IsPackable)' == ''">false</IsPackable>
     <!-- The site provides DynCMS and everything it depends on; only the plugin's own assemblies go in the package. -->
     <CopyLocalLockFileAssemblies Condition="'$(CopyLocalLockFileAssemblies)' == ''">false</CopyLocalLockFileAssemblies>
+    <!-- A component tag Razor cannot resolve (a missing @using in _Imports.razor) renders as an empty HTML element
+         instead of failing; make it a build error. -->
+    <WarningsAsErrors>$(WarningsAsErrors);RZ10012</WarningsAsErrors>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,6 +22,10 @@
 
   <ItemGroup>
     <Using Include="DynCMS.Plugins" />
+    <Using Include="DynCMS.Plugins.Models" />
+    <Using Include="DynCMS.Plugins.Helpers" />
+    <Using Include="DynCMS.Plugins.PropertyEditors" />
+    <Using Include="DynCMS.Plugins.Templates" />
     <Using Include="DynCMS.Plugins.Components" />
     <Using Include="DynCMS.Plugins.Services" />
   </ItemGroup>

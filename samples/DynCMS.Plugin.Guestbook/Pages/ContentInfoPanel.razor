@@ -1,0 +1,30 @@
+@inject IContentService Content
+
+@*
+    A panel below the content editor (slot PluginSlots.AdminContentEditor). It receives the node being edited as
+    ContentId and reads it with the CMS content service, which a plugin gets from the SDK alone.
+*@
+
+@if (_node is not null)
+{
+    <div class="dc-info-card" style="margin:14px 0">
+        <h4>Guestbook plugin</h4>
+        <p class="dc-muted">
+            This panel comes from a plugin. It knows that <strong>@_node.Name</strong> is a <code>@_node.ContentType.Alias</code>
+            with @_childCount child item(s) and @(_node.IsPublished ? "is published" : "is not published").
+        </p>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid ContentId { get; set; }
+
+    private ContentNode? _node;
+    private int _childCount;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _node = await Content.GetAsync(ContentId);
+        _childCount = _node is null ? 0 : (await Content.GetChildrenAsync(ContentId)).Count;
+    }
+}

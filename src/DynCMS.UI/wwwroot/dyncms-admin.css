@@ -1187,3 +1187,6 @@ a.dc-badge { text-decoration: none; }
 .dc-empty-card h3 { margin: 0; }
 .dc-empty-card p { margin: 0; max-width: 46ch; }
 @media (max-width: 900px) { .dc-plugin-fact { grid-template-columns: minmax(0, 1fr); } }
+
+/* Components plugins add to the dashboard and below the content editor. */
+.dc-plugin-error { display: inline-block; padding: 6px 10px; border-radius: 8px; font-size: 13px; color: #9a3412; background: #fff7ed; border: 1px solid #fed7aa; }

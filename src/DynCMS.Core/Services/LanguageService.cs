@@ -1,6 +1,6 @@
 using System.Globalization;
 using DynCMS.Core.Data;
-using DynCMS.Core.Models;
+using DynCMS.Plugins.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace DynCMS.Core.Services;

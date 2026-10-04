@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace DynCMS.Core.Models;
+namespace DynCMS.Plugins.Models;
 
 /// <summary>
 /// A node in the content tree. Holds a draft (editable) state and, once published, a

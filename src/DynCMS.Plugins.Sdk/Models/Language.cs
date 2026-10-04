@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace DynCMS.Core.Models;
+namespace DynCMS.Plugins.Models;
 
 /// <summary>
 /// A language the site publishes content in (Settings → Languages). Content of a document type that

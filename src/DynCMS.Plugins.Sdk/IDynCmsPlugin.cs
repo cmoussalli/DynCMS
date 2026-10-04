@@ -1,4 +1,6 @@
 using System.Reflection;
+using DynCMS.Plugins.PropertyEditors;
+using DynCMS.Plugins.Templates;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -18,6 +20,10 @@ namespace DynCMS.Plugins;
 /// <item>Services (<see cref="ConfigureServices"/>), injectable into the plugin's own components, endpoints and
 /// controllers as usual.</item>
 /// <item>Minimal-API endpoints (<see cref="MapEndpoints"/>) and MVC API controllers found in the assembly.</item>
+/// <item>Property editors (<see cref="PropertyEditors"/>) and templates (<see cref="Templates"/>) that appear in the
+/// document type and content editors while the plugin runs.</item>
+/// <item>Components in the back-office dashboard, the content editor and every site page (<see cref="UiExtensions"/>).</item>
+/// <item>Reactions to content and media changes: register an <see cref="ICmsEventHandler"/> service.</item>
 /// <item>A private folder for its own files, for example a SQLite database (<see cref="IPluginContext.DataDirectory"/>).</item>
 /// <item>Static files: a <c>wwwroot</c> folder next to the binaries is served at <c>/_content/{plugin id}/…</c>.</item>
 /// </list>
@@ -47,6 +53,20 @@ public interface IDynCmsPlugin
 
     /// <summary>Links the plugin adds to the back-office navigation while it runs.</summary>
     IReadOnlyList<PluginMenuItem> MenuItems { get; }
+
+    /// <summary>
+    /// Property editors the plugin brings. Each needs a <see cref="PropertyEditorDefinition.ComponentType"/>: a component
+    /// with <c>[Parameter] string? Value</c> and <c>[Parameter] EventCallback&lt;string?&gt; ValueChanged</c>. They are
+    /// registered when the plugin starts and removed when it stops; document types that use one keep working as plain
+    /// text while it is stopped.
+    /// </summary>
+    IReadOnlyList<PropertyEditorDefinition> PropertyEditors => [];
+
+    /// <summary>Component templates the plugin brings (<see cref="TemplateDefinition.ComponentType"/>); registered on start, removed on stop.</summary>
+    IReadOnlyList<TemplateDefinition> Templates => [];
+
+    /// <summary>Components the plugin adds to the back-office and site slots (<see cref="PluginSlots"/>) while it runs.</summary>
+    IReadOnlyList<PluginUiExtension> UiExtensions => [];
 
     /// <summary>
     /// Registers the plugin's services. They live in a container owned by the plugin that falls back to the
@@ -101,6 +121,12 @@ public abstract class DynCmsPlugin : IDynCmsPlugin
     public virtual string? Icon => "box";
 
     public virtual IReadOnlyList<PluginMenuItem> MenuItems => [];
+
+    public virtual IReadOnlyList<PropertyEditorDefinition> PropertyEditors => [];
+
+    public virtual IReadOnlyList<TemplateDefinition> Templates => [];
+
+    public virtual IReadOnlyList<PluginUiExtension> UiExtensions => [];
 
     public virtual void ConfigureServices(IServiceCollection services, IPluginContext context) { }
 

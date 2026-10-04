@@ -16,6 +16,11 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- A few model members are internal on purpose (normalisation helpers) but are used by the Core services. -->
+    <InternalsVisibleTo Include="DynCMS.Core" />
+  </ItemGroup>
+
   <!-- MSBuild defaults and the PackDynCmsPlugin target for plugin projects (build/DynCMS.Plugins.Sdk.props and .targets). -->
   <ItemGroup>
     <None Include="build\DynCMS.Plugins.Sdk.props;build\DynCMS.Plugins.Sdk.targets" Pack="true" PackagePath="build\;buildTransitive\" />

@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.WebUtilities;
 
-namespace DynCMS.Core.Helpers;
+namespace DynCMS.Plugins.Helpers;
 
 /// <summary>
 /// One page of a longer list, with the numbers a pager needs. <see cref="Paging.Page{T}"/> makes one from any

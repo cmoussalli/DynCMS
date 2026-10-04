@@ -1,0 +1,43 @@
+@namespace DynCMS.UI.Rendering
+
+@* The component of a plugin, inside its layout when it has one. Used by PluginComponentView, live and prerendered. *@
+
+@if (Layout is not null)
+{
+    <LayoutView Layout="Layout">
+        <DynamicComponent Type="ComponentType" Parameters="ComponentParameters" @key="ComponentType" />
+    </LayoutView>
+}
+else
+{
+    <DynamicComponent Type="ComponentType" Parameters="ComponentParameters" @key="ComponentType" />
+}
+@if (CaptureHead)
+{
+    @* Prerender only: what the component put into the head (PageTitle, HeadContent) is collected here and handed to the real head by PluginComponentView. *@
+    <div data-dc-head="1"><HeadOutlet /></div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Type ComponentType { get; set; } = default!;
+
+    [Parameter] public Type? Layout { get; set; }
+
+    [Parameter] public IReadOnlyDictionary<string, object?>? Parameters { get; set; }
+
+    /// <summary>Also render the head content the component declares, in a marker element (see PluginComponentView).</summary>
+    [Parameter] public bool CaptureHead { get; set; }
+
+    // DynamicComponent throws for a parameter the component does not declare; callers pass a superset (for example
+    // ContentId to every content-editor panel), so only the declared [Parameter]s go through.
+    private IDictionary<string, object?>? ComponentParameters =>
+        Parameters is null
+            ? null
+            : Parameters
+                .Where(p => Declares(p.Key))
+                .ToDictionary(p => p.Key, p => p.Value);
+
+    private bool Declares(string name) =>
+        ComponentType.GetProperty(name, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+            ?.GetCustomAttributes(typeof(ParameterAttribute), true).Length > 0;
+}

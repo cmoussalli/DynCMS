@@ -1,0 +1,14 @@
+@*
+    A component template brought by the plugin (Templates in the plugin class): content whose template is
+    "guestbook.page" renders with this component. The published content arrives as the Content parameter.
+*@
+
+<article class="gb">
+    <h1>@Content.Name</h1>
+    <p class="gb-lead">Rendered by the Guestbook plugin's template.</p>
+    <p><a href="/guestbook">Open the guestbook</a></p>
+</article>
+
+@code {
+    [Parameter] public PublishedContent Content { get; set; } = default!;
+}

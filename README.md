@@ -248,11 +248,15 @@ into `App_Data/plugins/{id}/`. No redeploy, no restart. A plugin can bring:
 - **A private folder** (`App_Data/plugins/{id}/data`) for a SQLite database or any other files, which survives updates
   and is only deleted on uninstall when asked for.
 - **Static files** from a `wwwroot` folder, served at `/_content/{id}/…`.
+- **Content access and events.** The SDK includes the content, media, language and dictionary services, and a plugin can react
+  to publishes, saves, deletes and media uploads with an `ICmsEventHandler`.
+- **Editor and rendering extensions.** Property editors and component templates that show up next to the built-in ones.
+- **UI slots.** Components in the dashboard, below the content editor, in the head of every site page and at the end of it.
 
 Plugins are **started, stopped, reloaded and uninstalled** from the Plugins page and through the API and MCP
 (`plugins:read`, `plugins:manage`). A stopped plugin keeps its files and data but nothing it adds is reachable. The
 `samples/DynCMS.Plugin.Guestbook` project is a complete example (public guestbook page, moderated admin section, own
-SQLite database, API, controller, stylesheet); building it produces an uploadable package. A plugin runs with the rights
+SQLite database, API, controller, stylesheet, dashboard widget, content-editor panel, event handler, property editor, template, site head/footer slots); building it produces an uploadable package. A plugin runs with the rights
 of the application, so install only code you trust, or turn uploads off (`DynCms:Plugins:AllowUpload`) and deploy by
 copying. Details: [developer guide, §25](DEVELOPER-GUIDE.md#25-plugins).
 

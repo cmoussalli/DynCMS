@@ -1,6 +1,6 @@
-using DynCMS.Core.Models;
+using DynCMS.Plugins.Models;
 
-namespace DynCMS.Core.Services;
+namespace DynCMS.Plugins.Services;
 
 /// <summary>
 /// Read side used by the public website: resolves routes and navigates published content, in one language at a

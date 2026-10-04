@@ -1,8 +1,8 @@
 using System.Globalization;
-using DynCMS.Core.Models;
+using DynCMS.Plugins.Models;
 using Microsoft.AspNetCore.Components;
 
-namespace DynCMS.UI.Admin.PropertyEditors;
+namespace DynCMS.Plugins.PropertyEditors;
 
 /// <summary>
 /// Base class for property editor components. An editor receives the stored string value and

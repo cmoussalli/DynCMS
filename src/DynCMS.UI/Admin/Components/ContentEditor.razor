@@ -254,6 +254,8 @@ else
             }
         </div>
 
+        <PluginSlot Name="@PluginSlots.AdminContentEditor" Parameters="SlotParameters" />
+
         <footer class="dc-editor-foot">
             <button type="button" class="dc-btn dc-btn-danger-ghost" @onclick="() => _confirmDelete = true"><Icon Name="trash" Size="14" /> Delete</button>
             <span class="dc-editor-meta"><Icon Name="clock" Size="13" /> Last edited @LastEdited.ToLocalTime().ToString("g")</span>
@@ -291,6 +293,22 @@ else
     [Parameter] public EventCallback OnDeleted { get; set; }
 
     private ContentNode? _node;
+    private IReadOnlyDictionary<string, object?>? _slotParameters;
+    private Guid _slotParametersFor;
+
+    /// <summary>What plugin panels below the editor may declare as parameters (<c>ContentId</c>).</summary>
+    private IReadOnlyDictionary<string, object?> SlotParameters
+    {
+        get
+        {
+            if (_slotParameters is null || _slotParametersFor != Id)
+            {
+                _slotParameters = new Dictionary<string, object?> { ["ContentId"] = Id };
+                _slotParametersFor = Id;
+            }
+            return _slotParameters;
+        }
+    }
     private List<string> _groups = [];
     private string _tab = string.Empty;
     private string? _url;

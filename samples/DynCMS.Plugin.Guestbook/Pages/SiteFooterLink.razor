@@ -1,0 +1,7 @@
+@inject NavigationManager Nav
+
+@* Slot site.body-end: shown after the content of every site page except the guestbook itself. *@
+@if (!Nav.ToBaseRelativePath(Nav.Uri).StartsWith("guestbook", StringComparison.OrdinalIgnoreCase))
+{
+    <p class="gb-footer"><a href="/guestbook">Sign our guestbook</a></p>
+}

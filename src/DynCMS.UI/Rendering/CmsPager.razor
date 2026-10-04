@@ -21,7 +21,7 @@
         {
             <span class="pager-prev disabled" aria-disabled="true">‹ @PreviousText</span>
         }
-        @foreach (var number in Core.Helpers.Paging.PageNumbers(Paging.Page, Paging.PageCount, Window))
+        @foreach (var number in Plugins.Helpers.Paging.PageNumbers(Paging.Page, Paging.PageCount, Window))
         {
             if (number is int n)
             {
@@ -73,5 +73,5 @@
     [Parameter] public int Window { get; set; } = 2;
 
     private string UrlOf(int page) =>
-        UrlFor?.Invoke(page) ?? Core.Helpers.Paging.PageUrl(Nav.ToAbsoluteUri(Nav.Uri), page);
+        UrlFor?.Invoke(page) ?? Plugins.Helpers.Paging.PageUrl(Nav.ToAbsoluteUri(Nav.Uri), page);
 }

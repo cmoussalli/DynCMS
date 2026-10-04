@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 
-namespace DynCMS.Core.Helpers;
+namespace DynCMS.Plugins.Helpers;
 
 /// <summary>Converts the string values stored by property editors to typed values.</summary>
 public static class ContentValueConverter

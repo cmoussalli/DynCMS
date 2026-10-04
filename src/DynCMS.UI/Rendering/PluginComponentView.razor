@@ -1,0 +1,103 @@
+@namespace DynCMS.UI.Rendering
+@inject IPluginComponentRenderer Prerenderer
+@inject IServiceProvider Services
+
+@*
+    Shows one component that belongs to a plugin: a plugin page, or a component in a slot.
+
+    Interactive (the Blazor circuit): the component is created directly; the circuit's scope is plugin-aware, so
+    @inject of plugin services works.
+
+    Not interactive (the server-side prerender pass, or a page that is static SSR): the application's renderer cannot
+    create the component, because it builds components from a container that does not know the plugin's services. The
+    component is rendered to HTML in a scope of the plugin-aware provider instead (IPluginComponentRenderer) and the
+    markup is emitted, so the prerendered page already contains the plugin's content. The interactive render replaces it.
+*@
+
+@if (RendererInfo.IsInteractive)
+{
+    @if (Isolate)
+    {
+        <ErrorBoundary>
+            <ChildContent><PluginPrerenderFrame ComponentType="ComponentType" Layout="Layout" Parameters="Parameters" /></ChildContent>
+            <ErrorContent><span class="dc-plugin-error" title="@context.Message">This part of the page failed to load.</span></ErrorContent>
+        </ErrorBoundary>
+    }
+    else
+    {
+        <PluginPrerenderFrame ComponentType="ComponentType" Layout="Layout" Parameters="Parameters" />
+    }
+}
+else if (_html is not null)
+{
+    @if (_title is not null)
+    {
+        <PageTitle>@_title</PageTitle>
+    }
+    @if (_head is not null)
+    {
+        <HeadContent>@((MarkupString)_head)</HeadContent>
+    }
+    @((MarkupString)_html)
+}
+
+@code {
+    /// <summary>The Blazor component to show.</summary>
+    [Parameter, EditorRequired] public Type ComponentType { get; set; } = default!;
+
+    /// <summary>The component's <c>@@layout</c>, nested inside the host layout; null for none.</summary>
+    [Parameter] public Type? Layout { get; set; }
+
+    /// <summary>Parameters for the component (only the ones it declares).</summary>
+    [Parameter] public IReadOnlyDictionary<string, object?>? Parameters { get; set; }
+
+    /// <summary>When true, an exception in the component is contained: the rest of the page keeps working.</summary>
+    [Parameter] public bool Isolate { get; set; }
+
+    /// <summary>Hand the head content the component declares (PageTitle, HeadContent) to the page's head. Set for pages, not for slots.</summary>
+    [Parameter] public bool ForwardHead { get; set; }
+
+    private string? _html;
+    private string? _head;
+    private string? _title;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (RendererInfo.IsInteractive)
+        {
+            _html = _head = _title = null;
+            return;
+        }
+
+        var frameParameters = new Dictionary<string, object?>
+        {
+            [nameof(PluginPrerenderFrame.ComponentType)] = ComponentType,
+            [nameof(PluginPrerenderFrame.Layout)] = Layout,
+            [nameof(PluginPrerenderFrame.Parameters)] = Parameters,
+            [nameof(PluginPrerenderFrame.CaptureHead)] = ForwardHead
+        };
+        _html = await Prerenderer.RenderAsync(Services, typeof(PluginPrerenderFrame), frameParameters);
+        _head = _title = null;
+        if (_html is not null && ForwardHead) SplitHead();
+    }
+
+    // The frame ends with <div data-dc-head="1">…head markup…</div>. Move it out of the body: the <title> becomes a
+    // PageTitle (the page already has one title) and the rest goes into HeadContent.
+    private void SplitHead()
+    {
+        const string marker = "<div data-dc-head=\"1\">";
+        var start = _html!.LastIndexOf(marker, StringComparison.Ordinal);
+        if (start < 0 || !_html.EndsWith("</div>", StringComparison.Ordinal)) return;
+
+        var head = _html[(start + marker.Length)..^"</div>".Length];
+        _html = _html[..start];
+
+        var titleMatch = System.Text.RegularExpressions.Regex.Match(head, "<title[^>]*>(.*?)</title>", System.Text.RegularExpressions.RegexOptions.Singleline | System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (titleMatch.Success)
+        {
+            _title = System.Net.WebUtility.HtmlDecode(titleMatch.Groups[1].Value);
+            head = head.Remove(titleMatch.Index, titleMatch.Length);
+        }
+        _head = string.IsNullOrWhiteSpace(head) ? null : head;
+    }
+}

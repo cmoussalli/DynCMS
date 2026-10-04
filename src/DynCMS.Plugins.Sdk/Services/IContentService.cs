@@ -1,6 +1,6 @@
-using DynCMS.Core.Models;
+using DynCMS.Plugins.Models;
 
-namespace DynCMS.Core.Services;
+namespace DynCMS.Plugins.Services;
 
 /// <summary>A reason content cannot be published. <paramref name="Culture"/> names the language the error belongs to, or is null for shared fields.</summary>
 public sealed record ContentValidationError(string PropertyAlias, string Message, string? Culture = null);

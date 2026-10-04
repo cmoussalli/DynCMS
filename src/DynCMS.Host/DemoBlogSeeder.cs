@@ -1,6 +1,6 @@
 using System.Text;
 using System.Text.Json;
-using DynCMS.Core.Models;
+using DynCMS.Plugins.Models;
 using DynCMS.Core.PropertyEditors;
 using DynCMS.Core.Services;
 using DynCMS.Core.Templates;

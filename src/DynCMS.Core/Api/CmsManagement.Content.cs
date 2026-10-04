@@ -1,6 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
-using DynCMS.Core.Models;
+using DynCMS.Plugins.Models;
 using DynCMS.Core.Security;
 using DynCMS.Core.Services;
 

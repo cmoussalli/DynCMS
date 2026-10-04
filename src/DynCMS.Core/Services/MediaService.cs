@@ -1,6 +1,7 @@
+using DynCMS.Core.Plugins;
 using DynCMS.Core.Data;
-using DynCMS.Core.Helpers;
-using DynCMS.Core.Models;
+using DynCMS.Plugins.Helpers;
+using DynCMS.Plugins.Models;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -30,8 +31,12 @@ public sealed class FileSystemMediaStorage(DynCmsPaths paths) : IMediaStorage
 public sealed class MediaService(
     IDbContextFactory<DynCmsDbContext> factory,
     IMediaStorage storage,
-    IOptions<DynCmsOptions> options) : IMediaService
+    IOptions<DynCmsOptions> options,
+    ICmsEventDispatcher? events = null) : IMediaService
 {
+    private Task EmitAsync(MediaEventKind kind, MediaItem item, CancellationToken ct) =>
+        events is null ? Task.CompletedTask : events.PublishAsync(new MediaEvent(kind, item), ct);
+
     private static readonly FileExtensionContentTypeProvider ContentTypes = new();
 
     public async Task<IReadOnlyList<MediaItem>> GetChildrenAsync(Guid? folderId, CancellationToken ct = default)
@@ -82,6 +87,7 @@ public sealed class MediaService(
         var folder = new MediaItem { ParentId = parentId, Name = name.Trim(), IsFolder = true };
         db.MediaItems.Add(folder);
         await db.SaveChangesAsync(ct);
+        await EmitAsync(MediaEventKind.FolderCreated, folder, ct);
         return folder;
     }
 
@@ -132,6 +138,7 @@ public sealed class MediaService(
         await using var db = await factory.CreateDbContextAsync(ct);
         db.MediaItems.Add(item);
         await db.SaveChangesAsync(ct);
+        await EmitAsync(MediaEventKind.Uploaded, item, ct);
         return item;
     }
 
@@ -143,6 +150,7 @@ public sealed class MediaService(
         item.Name = name.Trim();
         item.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
+        await EmitAsync(MediaEventKind.Renamed, item, ct);
         return item;
     }
 
@@ -173,6 +181,7 @@ public sealed class MediaService(
 
         db.MediaItems.RemoveRange(toDelete);
         await db.SaveChangesAsync(ct);
+        await EmitAsync(MediaEventKind.Deleted, item, ct);
     }
 
     public string? GetUrl(MediaItem? item) =>

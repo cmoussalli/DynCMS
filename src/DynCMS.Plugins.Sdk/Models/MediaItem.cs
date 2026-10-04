@@ -1,4 +1,4 @@
-namespace DynCMS.Core.Models;
+namespace DynCMS.Plugins.Models;
 
 /// <summary>A file or folder in the media library.</summary>
 public class MediaItem

@@ -138,6 +138,9 @@ internal sealed partial class PluginManager : IPluginManager, IHostedService
         public IReadOnlyList<PluginPage> Pages { get; set; } = [];
         public IReadOnlyList<PluginMenuItem> MenuItems { get; set; } = [];
         public AssemblyPart? Part { get; set; }
+        public IReadOnlyList<PluginUiExtension> UiExtensions { get; set; } = [];
+        public List<string> EditorAliases { get; } = [];
+        public List<string> TemplateAliases { get; } = [];
         public List<IHostedService> HostedServices { get; } = [];
     }
 
@@ -165,6 +168,7 @@ internal sealed partial class PluginManager : IPluginManager, IHostedService
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<string, PluginEntry> _entries = new(StringComparer.OrdinalIgnoreCase);
     private volatile IReadOnlyList<PluginInfo> _snapshot = [];
+    private volatile IReadOnlyList<PluginUiExtension> _extensions = [];
     private IEndpointRouteBuilder? _applicationEndpoints;
     private bool _initialized;
     private bool _warnedNoEndpoints;
@@ -199,6 +203,8 @@ internal sealed partial class PluginManager : IPluginManager, IHostedService
     public string RootPath => _paths.PluginsRootPath;
     public bool ServiceProviderAttached => _registry.IsAttached;
     public IReadOnlyList<PluginInfo> Plugins => _snapshot;
+    /// <summary>The slot components of the running plugins.</summary>
+    internal IReadOnlyList<PluginUiExtension> Extensions => _extensions;
     public event Action? Changed;
 
     /// <summary>The provider plugins see: the plugin-aware wrapper when installed, else the application container.</summary>
@@ -557,6 +563,8 @@ internal sealed partial class PluginManager : IPluginManager, IHostedService
 
             entry.Pages = PluginRouter.Discover(entry.Id, entry.Assembly!, logger);
             entry.MenuItems = (plugin.MenuItems ?? []).OrderBy(m => m.Order).ToList();
+            entry.UiExtensions = (plugin.UiExtensions ?? []).OrderBy(x => x.Order).ToList();
+            RegisterContributions(entry, plugin, logger);
 
             if (_applicationEndpoints is not null)
             {
@@ -599,6 +607,8 @@ internal sealed partial class PluginManager : IPluginManager, IHostedService
         }
         entry.Pages = [];
         entry.MenuItems = [];
+        entry.UiExtensions = [];
+        UnregisterContributions(entry);
         entry.Endpoints = [];
         entry.EndpointCount = 0;
 
@@ -627,6 +637,59 @@ internal sealed partial class PluginManager : IPluginManager, IHostedService
         entry.Status = PluginStatus.Stopped;
         entry.StartedAt = null;
         _logger.LogInformation("Plugin {Plugin} stopped", entry.Id);
+    }
+
+    /// <summary>
+    /// Adds the property editors and component templates a plugin brings to the application's registries. An alias an
+    /// existing editor or template already owns is skipped with a warning (a plugin must not replace a built-in).
+    /// </summary>
+    private void RegisterContributions(PluginEntry entry, IDynCmsPlugin plugin, ILogger logger)
+    {
+        var editors = _hostServices.GetService<IPropertyEditorRegistry>();
+        if (editors is not null)
+        {
+            foreach (var editor in plugin.PropertyEditors ?? [])
+            {
+                if (editors.Get(editor.Alias) is not null)
+                {
+                    logger.LogWarning("Property editor '{Alias}' already exists; the plugin's editor with that alias is ignored.", editor.Alias);
+                    continue;
+                }
+                editors.Register(editor);
+                entry.EditorAliases.Add(editor.Alias);
+            }
+        }
+
+        var templates = _hostServices.GetService<ITemplateRegistry>();
+        if (templates is not null)
+        {
+            foreach (var template in plugin.Templates ?? [])
+            {
+                if (template.ComponentType is null)
+                {
+                    logger.LogWarning("Template '{Alias}' has no ComponentType and is ignored.", template.Alias);
+                    continue;
+                }
+                if (templates.Get(template.Alias) is not null)
+                {
+                    logger.LogWarning("Template '{Alias}' already exists; the plugin's template with that alias is ignored.", template.Alias);
+                    continue;
+                }
+                templates.Register(template);
+                entry.TemplateAliases.Add(template.Alias);
+            }
+        }
+    }
+
+    private void UnregisterContributions(PluginEntry entry)
+    {
+        var editors = _hostServices.GetService<IPropertyEditorRegistry>();
+        foreach (var alias in entry.EditorAliases) editors?.Unregister(alias);
+        entry.EditorAliases.Clear();
+
+        var templates = _hostServices.GetService<ITemplateRegistry>();
+        foreach (var alias in entry.TemplateAliases) templates?.Unregister(alias);
+        entry.TemplateAliases.Clear();
     }
 
     /// <summary>Refuses a plugin that needs a newer DynCMS than the one running (or does not say what it needs).</summary>
@@ -825,6 +888,7 @@ internal sealed partial class PluginManager : IPluginManager, IHostedService
             infos = _entries.Values.Select(Info).OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToList();
         }
         _router.Rebuild(running.SelectMany(e => e.Pages));
+        _extensions = running.SelectMany(e => e.UiExtensions).ToList();
         _endpointSource.Update(running.SelectMany(e => e.Endpoints));
         _controllerChanges.NotifyChanges();
         _snapshot = infos;
