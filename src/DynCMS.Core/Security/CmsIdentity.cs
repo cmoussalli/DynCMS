@@ -15,6 +15,12 @@ public sealed class CmsIdentity : ICmsIdentity
     private readonly DatabaseConfigurationStore _store;
     private readonly ILogger<CmsIdentity> _logger;
     private readonly object _initLock = new();
+
+    // IDFManager's services share one EF DbContext, which is not thread-safe. Concurrent requests (the page, the
+    // circuit, API calls) validating tokens at the same moment made it throw "A second operation was started on
+    // this context instance", which ValidateToken turned into "not signed in" (an endless redirect to the login page,
+    // more likely the slower the database). Every call into the framework's services goes through this lock.
+    private static readonly object _frameworkLock = new();
     private bool _initialized;
 
     public CmsIdentity(IOptions<DynCmsOptions> options, DatabaseConfigurationStore store, ILogger<CmsIdentity> logger)
@@ -113,7 +119,7 @@ public sealed class CmsIdentity : ICmsIdentity
 
         try
         {
-            var result = IDFManager.authService.AuthUserLogin(userName.Trim(), password, ipAddress);
+            var result = Locked(() => IDFManager.authService.AuthUserLogin(userName.Trim(), password, ipAddress));
             if (result.SecurityValidationResult != SecurityValidationResult.Ok || result.UserToken is null)
             {
                 return CmsSignInResult.Failed(result.SecurityValidationResult switch
@@ -143,19 +149,22 @@ public sealed class CmsIdentity : ICmsIdentity
         {
             // The framework decides whether the token is valid (decryption, expiry, user state,
             // sessions). The decrypted User object only carries identity data and roles.
-            var auth = IDFManager.authService.AuthUserToken(token, TokenValidationMode.UseDefault);
-            if (auth.SecurityValidationResult != SecurityValidationResult.Ok || auth.UserToken?.User is null)
-                return null;
+            lock (_frameworkLock)
+            {
+                var auth = IDFManager.authService.AuthUserToken(token, TokenValidationMode.UseDefault);
+                if (auth.SecurityValidationResult != SecurityValidationResult.Ok || auth.UserToken?.User is null)
+                    return null;
 
-            var userToken = auth.UserToken;
-            var user = userToken.User;
-            var roles = user.Roles?.Select(r => r.Id).ToList()
-                        ?? IDFManager.userService.GetRoles(user.Id).Select(r => r.Id).ToList();
-            var expires = userToken.ExpireDate > DateTime.MinValue.AddYears(1)
-                ? userToken.ExpireDate
-                : DateTime.UtcNow.Add(TokenLifetime);
+                var userToken = auth.UserToken;
+                var user = userToken.User;
+                var roles = user.Roles?.Select(r => r.Id).ToList()
+                            ?? IDFManager.userService.GetRoles(user.Id).Select(r => r.Id).ToList();
+                var expires = userToken.ExpireDate > DateTime.MinValue.AddYears(1)
+                    ? userToken.ExpireDate
+                    : DateTime.UtcNow.Add(TokenLifetime);
 
-            return new CmsPrincipal(user.Id, user.UserName, user.FullName, user.Email, roles, expires);
+                return new CmsPrincipal(user.Id, user.UserName, user.FullName, user.Email, roles, expires);
+            }
         }
         catch (Exception ex)
         {
@@ -164,10 +173,15 @@ public sealed class CmsIdentity : ICmsIdentity
         }
     }
 
-    public int CountUsers() => IDFManager.userService.GetAll(includeDeleted: false).Count;
+    private static T Locked<T>(Func<T> call)
+    {
+        lock (_frameworkLock) return call();
+    }
+
+    public int CountUsers() => Locked(() => IDFManager.userService.GetAll(includeDeleted: false).Count);
 
     public IReadOnlyList<CmsUserSummary> GetUsers() =>
-        IDFManager.userService.GetAll(includeDeleted: false).Select(Map).ToList();
+        Locked(() => IDFManager.userService.GetAll(includeDeleted: false).Select(Map).ToList());
 
     public CmsUserSummary? FindUserByName(string userName)
     {
