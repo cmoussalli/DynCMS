@@ -26,4 +26,10 @@ public sealed class StartupContext
     /// configuration file and nobody was asked. Seeders fall back to their own default in that case.
     /// </summary>
     public StarterContent? RequestedStarterContent { get; internal set; }
+
+    /// <summary>
+    /// The administrator account chosen on <c>/setup</c>, used when the identity framework creates its master data.
+    /// <c>null</c> falls back to <c>DynCms:Identity:AdminUserName</c>/<c>AdminPassword</c>.
+    /// </summary>
+    public (string UserName, string Password)? RequestedAdmin { get; internal set; }
 }

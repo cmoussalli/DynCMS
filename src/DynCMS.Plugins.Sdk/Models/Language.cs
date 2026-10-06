@@ -47,6 +47,9 @@ public class Language
     }
 
     public bool Is(string? isoCode) => string.Equals(IsoCode, isoCode, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>A detached copy that can be edited without touching the cached original.</summary>
+    public Language Clone() => (Language)MemberwiseClone();
 }
 
 /// <summary>A link to the same page in another language, used by language switchers.</summary>

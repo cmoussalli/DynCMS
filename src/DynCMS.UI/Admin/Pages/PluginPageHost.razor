@@ -18,7 +18,7 @@
             <h2>There is nothing at <code>/admin/@Rest</code></h2>
             @if (_stopped.Count > 0)
             {
-                <p>A stopped plugin may own this page: @string.Join(", ", _stopped). Start it under Settings → Plugins.</p>
+                <p>A stopped plugin may own this page: @string.Join(", ", _stopped). Start it under System → Plugins.</p>
             }
             else
             {
@@ -27,7 +27,7 @@
             <div class="dc-inline">
                 <a class="dc-btn dc-btn-primary" href="/admin"><Icon Name="grid" Size="14" /> Dashboard</a>
                 <AuthorizeView Roles="@CmsRoles.Admin">
-                    <a class="dc-btn" href="/admin/settings/plugins"><Icon Name="box" Size="14" /> Plugins</a>
+                    <a class="dc-btn" href="/admin/system/plugins"><Icon Name="box" Size="14" /> Plugins</a>
                 </AuthorizeView>
             </div>
         </div>

@@ -20,4 +20,12 @@ public class PropertyType
     public Dictionary<string, string> Config { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     public string? GetConfig(string key) => Config.TryGetValue(key, out var v) ? v : null;
+
+    /// <summary>A detached copy that can be edited without touching the cached original.</summary>
+    public PropertyType Clone()
+    {
+        var copy = (PropertyType)MemberwiseClone();
+        copy.Config = new Dictionary<string, string>(Config, StringComparer.OrdinalIgnoreCase);
+        return copy;
+    }
 }

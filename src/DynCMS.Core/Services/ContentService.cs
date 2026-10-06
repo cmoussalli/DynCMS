@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace DynCMS.Core.Services;
 
-public sealed class ContentService(IDbContextFactory<DynCmsDbContext> factory, ICmsEventDispatcher? events = null) : IContentService
+public sealed class ContentService(IDbContextFactory<DynCmsDbContext> factory, ContentCache cache, ICmsEventDispatcher? events = null) : IContentService
 {
     private Task EmitAsync(ContentEventKind kind, ContentNode? node, IReadOnlyList<string>? cultures, CancellationToken ct) =>
         events is null || node is null ? Task.CompletedTask : events.PublishAsync(new ContentEvent(kind, node, cultures), ct);
@@ -188,7 +188,7 @@ public sealed class ContentService(IDbContextFactory<DynCmsDbContext> factory, I
         // Detach the type: it was loaded tracked and must not be re-inserted.
         db.Entry(type).State = EntityState.Unchanged;
         db.ContentNodes.Add(node);
-        await db.SaveChangesAsync(ct);
+        await CommitAsync(db, ct);
         var created = (await GetAsync(node.Id, ct))!;
         await EmitAsync(ContentEventKind.Created, created, null, ct);
         return created;
@@ -247,7 +247,7 @@ public sealed class ContentService(IDbContextFactory<DynCmsDbContext> factory, I
         target.DraftValues = new Dictionary<string, string?>(node.DraftValues, StringComparer.OrdinalIgnoreCase);
         target.UpdatedAt = now;
 
-        await db.SaveChangesAsync(ct);
+        await CommitAsync(db, ct);
         var saved = (await GetAsync(node.Id, ct))!;
         await EmitAsync(ContentEventKind.Saved, saved, null, ct);
         return saved;
@@ -289,7 +289,7 @@ public sealed class ContentService(IDbContextFactory<DynCmsDbContext> factory, I
             node.PublishedValues = new Dictionary<string, string?>(node.DraftValues, StringComparer.OrdinalIgnoreCase);
             node.PublishedAt = now;
             node.UpdatedAt = now;
-            await db.SaveChangesAsync(ct);
+            await CommitAsync(db, ct);
             var live = (await GetAsync(id, ct))!;
             await EmitAsync(ContentEventKind.Published, live, null, ct);
             return PublishResult.Ok(live);
@@ -341,7 +341,7 @@ public sealed class ContentService(IDbContextFactory<DynCmsDbContext> factory, I
         node.PublishedValues = new Dictionary<string, string?>(node.DraftValues, StringComparer.OrdinalIgnoreCase);
         node.PublishedAt = now;
         node.UpdatedAt = now;
-        await db.SaveChangesAsync(ct);
+        await CommitAsync(db, ct);
         var published = (await GetAsync(id, ct))!;
         await EmitAsync(ContentEventKind.Published, published, requested.Select(l => l.IsoCode).ToList(), ct);
         return PublishResult.Ok(published);
@@ -378,7 +378,7 @@ public sealed class ContentService(IDbContextFactory<DynCmsDbContext> factory, I
         }
 
         node.UpdatedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync(ct);
+        await CommitAsync(db, ct);
         var taken = await GetAsync(id, ct);
         await EmitAsync(ContentEventKind.Unpublished, taken, culture is null ? null : [culture], ct);
         return taken;
@@ -393,7 +393,7 @@ public sealed class ContentService(IDbContextFactory<DynCmsDbContext> factory, I
         var descendants = await db.ContentNodes.Where(n => n.Path.StartsWith(prefix)).ToListAsync(ct);
         db.ContentNodes.RemoveRange(descendants);
         db.ContentNodes.Remove(node);
-        await db.SaveChangesAsync(ct);
+        await CommitAsync(db, ct);
         await EmitAsync(ContentEventKind.Deleted, node, null, ct);
     }
 
@@ -411,11 +411,18 @@ public sealed class ContentService(IDbContextFactory<DynCmsDbContext> factory, I
         siblings.RemoveAt(index);
         siblings.Insert(newIndex, node);
         for (var i = 0; i < siblings.Count; i++) siblings[i].SortOrder = i;
-        await db.SaveChangesAsync(ct);
+        await CommitAsync(db, ct);
         await EmitAsync(ContentEventKind.Moved, node, null, ct);
     }
 
     // ---- helpers ----
+
+    /// <summary>Saves and drops the content cache, so the public site (and whoever handles the event raised next) sees the change.</summary>
+    private async Task CommitAsync(DynCmsDbContext db, CancellationToken ct)
+    {
+        await db.SaveChangesAsync(ct);
+        cache.InvalidateContent();
+    }
 
     private static Language ResolveLanguage(IReadOnlyList<Language> languages, string? culture)
     {

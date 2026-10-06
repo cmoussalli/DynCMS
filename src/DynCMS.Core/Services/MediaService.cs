@@ -32,6 +32,7 @@ public sealed class MediaService(
     IDbContextFactory<DynCmsDbContext> factory,
     IMediaStorage storage,
     IOptions<DynCmsOptions> options,
+    ContentCache cache,
     ICmsEventDispatcher? events = null) : IMediaService
 {
     private Task EmitAsync(MediaEventKind kind, MediaItem item, CancellationToken ct) =>
@@ -47,10 +48,16 @@ public sealed class MediaService(
             .ToListAsync(ct);
     }
 
+    // Templates look media up by id on every render, so single items are cached and handed out as copies.
     public async Task<MediaItem?> GetAsync(Guid id, CancellationToken ct = default)
     {
+        if (cache.TryGetMedia(id, out var cached)) return cached?.Clone();
+
+        var version = cache.MediaVersion;
         await using var db = await factory.CreateDbContextAsync(ct);
-        return await db.MediaItems.AsNoTracking().FirstOrDefaultAsync(m => m.Id == id, ct);
+        var item = await db.MediaItems.AsNoTracking().FirstOrDefaultAsync(m => m.Id == id, ct);
+        cache.SetMedia(id, item, version);
+        return item?.Clone();
     }
 
     public async Task<IReadOnlyList<MediaItem>> GetAncestorsAsync(Guid id, CancellationToken ct = default)
@@ -87,6 +94,7 @@ public sealed class MediaService(
         var folder = new MediaItem { ParentId = parentId, Name = name.Trim(), IsFolder = true };
         db.MediaItems.Add(folder);
         await db.SaveChangesAsync(ct);
+        cache.InvalidateMedia();
         await EmitAsync(MediaEventKind.FolderCreated, folder, ct);
         return folder;
     }
@@ -138,6 +146,7 @@ public sealed class MediaService(
         await using var db = await factory.CreateDbContextAsync(ct);
         db.MediaItems.Add(item);
         await db.SaveChangesAsync(ct);
+        cache.InvalidateMedia();
         await EmitAsync(MediaEventKind.Uploaded, item, ct);
         return item;
     }
@@ -150,6 +159,7 @@ public sealed class MediaService(
         item.Name = name.Trim();
         item.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
+        cache.InvalidateMedia();
         await EmitAsync(MediaEventKind.Renamed, item, ct);
         return item;
     }
@@ -181,6 +191,7 @@ public sealed class MediaService(
 
         db.MediaItems.RemoveRange(toDelete);
         await db.SaveChangesAsync(ct);
+        cache.InvalidateMedia();
         await EmitAsync(MediaEventKind.Deleted, item, ct);
     }
 

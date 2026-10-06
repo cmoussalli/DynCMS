@@ -1,123 +1,191 @@
 @page "/admin/system"
+@page "/admin/system/{View}"
 @namespace DynCMS.UI.Admin.Pages
-@attribute [Authorize(Roles = CmsRoles.Admin)]
+@attribute [Authorize]
 @implements IDisposable
-@inject ISystemVersionService Versions
+@inject IDatabaseMaintenanceService Maintenance
+@inject DatabaseConfigurationStore Store
 @inject IPluginManager Plugins
 
 <PageTitle>System · DynCMS</PageTitle>
 
-<div class="dc-page dc-page-wide">
-    <header class="dc-page-head dc-page-head-row">
-        <div>
-            <h1><Icon Name="info" Size="22" /> System</h1>
-            <p class="dc-muted">The version of this DynCMS application layer and of its database. Plugins declare the lowest DynCMS version they support and are only attached to a site that is at least that new.</p>
+<div class="dc-section">
+    <aside class="dc-tree-panel">
+        <div class="dc-panel-head">
+            <h2><span class="dc-panel-icon"><Icon Name="info" Size="15" /></span> System</h2>
         </div>
-        <button type="button" class="dc-btn" @onclick="LoadAsync" disabled="@_loading" title="Refresh"><Icon Name="refresh" Size="14" /> Refresh</button>
-    </header>
+        <div class="dc-tree">
+            @if (_isAdmin)
+            {
+            <div class="dc-tree-group">
+                <div class="dc-tree-group-head"><span><Icon Name="layers" Size="14" /> Application</span></div>
+                <ul class="dc-tree-list">
+                    <li class="dc-tree-item">
+                        <div class="dc-tree-row @(Mode == "version" ? "dc-selected" : null)" style="padding-left:10px">
+                            <a class="dc-tree-link" href="/admin/system"><Icon Name="info" Size="15" /><span class="dc-tree-name">Version</span></a>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+            }
+            <div class="dc-tree-group">
+                <div class="dc-tree-group-head"><span><Icon Name="zap" Size="14" /> Integrations</span></div>
+                <ul class="dc-tree-list">
+                    <li class="dc-tree-item">
+                        <div class="dc-tree-row @(Mode == "api" ? "dc-selected" : null)" style="padding-left:10px">
+                            <a class="dc-tree-link" href="/admin/system/api"><Icon Name="lock" Size="15" /><span class="dc-tree-name">API &amp; AI agents</span></a>
+                        </div>
+                    </li>
+                    @if (_isAdmin)
+                    {
+                        <li class="dc-tree-item">
+                            <div class="dc-tree-row @(Mode == "plugins" ? "dc-selected" : null)" style="padding-left:10px">
+                                <a class="dc-tree-link" href="/admin/system/plugins"><Icon Name="box" Size="15" /><span class="dc-tree-name">Plugins</span><small>@_pluginsRunning/@_pluginsTotal</small></a>
+                            </div>
+                        </li>
+                    }
+                </ul>
+            </div>
+            @if (_isAdmin)
+            {
+            <div class="dc-tree-group">
+                <div class="dc-tree-group-head"><span><Icon Name="hard-drive" Size="14" /> Primary database</span></div>
+                <ul class="dc-tree-list">
+                    <li class="dc-tree-item">
+                        <div class="dc-tree-row @(Mode == "database" ? "dc-selected" : null)" style="padding-left:10px">
+                            <a class="dc-tree-link" href="/admin/system/database"><Icon Name="activity" Size="15" /><span class="dc-tree-name">Overview</span></a>
+                        </div>
+                    </li>
+                    <li class="dc-tree-item">
+                        <div class="dc-tree-row @(Mode == "configuration" ? "dc-selected" : null)" style="padding-left:10px">
+                            <a class="dc-tree-link" href="/admin/system/configuration"><Icon Name="sliders" Size="15" /><span class="dc-tree-name">Configuration</span></a>
+                        </div>
+                    </li>
+                    <li class="dc-tree-item">
+                        <div class="dc-tree-row @(Mode == "backups" ? "dc-selected" : null)" style="padding-left:10px">
+                            <a class="dc-tree-link" href="/admin/system/backups"><Icon Name="save" Size="15" /><span class="dc-tree-name">Backups &amp; restore</span>@if (_backupCount is int n) { <small>@n</small> }</a>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+            <div class="dc-tree-group">
+                <div class="dc-tree-group-head"><span><Icon Name="bar-chart" Size="14" /> Analytics database</span></div>
+                <ul class="dc-tree-list">
+                    <li class="dc-tree-item">
+                        <div class="dc-tree-row @(Mode == "analytics" ? "dc-selected" : null)" style="padding-left:10px">
+                            <a class="dc-tree-link" href="/admin/system/analytics"><Icon Name="sliders" Size="15" /><span class="dc-tree-name">Configuration</span>@if (!Store.IsAnalyticsSeparate) { <small class="dc-badge dc-badge-muted">shared</small> }</a>
+                        </div>
+                    </li>
+                    <li class="dc-tree-item">
+                        <div class="dc-tree-row @(Mode == "analytics-backups" ? "dc-selected" : null)" style="padding-left:10px">
+                            <a class="dc-tree-link" href="/admin/system/analytics-backups"><Icon Name="save" Size="15" /><span class="dc-tree-name">Backups &amp; restore</span>@if (_analyticsBackupCount is int a) { <small>@a</small> }</a>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+            <div class="dc-tree-group">
+                <div class="dc-tree-group-head"><span><Icon Name="alert" Size="14" /> Danger zone</span></div>
+                <ul class="dc-tree-list">
+                    <li class="dc-tree-item">
+                        <div class="dc-tree-row @(Mode == "reset" ? "dc-selected" : null)" style="padding-left:10px">
+                            <a class="dc-tree-link" href="/admin/system/reset"><Icon Name="rotate-ccw" Size="15" /><span class="dc-tree-name">Reset configuration</span></a>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+            }
+        </div>
+    </aside>
 
-    @if (_error is not null)
-    {
-        <div class="dc-alert dc-alert-error"><Icon Name="alert" Size="15" /> <span>@_error</span></div>
-    }
-    else if (_info is null)
-    {
-        <div class="dc-loading"><span class="dc-spinner"></span> Reading versions…</div>
-    }
-    else
-    {
-        @if (_info.State == DatabaseVersionState.NewerThanApplication)
+    <main class="dc-workspace">
+        @switch (Mode)
         {
-            <div class="dc-alert dc-alert-warn"><Icon Name="alert" Size="15" /> <span>This database was prepared by a newer DynCMS (schema @_info.DatabaseSchemaVersion@(_info.DatabaseApplicationVersion is { Length: > 0 } v ? $", DynCMS {v}" : null)), but this site runs DynCMS @_info.ApplicationVersion with schema @_info.ExpectedSchemaVersion. Update DynCMS before editing content.</span></div>
+            case "api":
+                <ApiKeysPanel />
+                break;
+            case "plugins":
+                <PluginsPanel />
+                break;
+            case "database":
+                <DataOverview OnChanged="RefreshCountAsync" />
+                break;
+            case "configuration":
+                <DataConfiguration />
+                break;
+            case "backups":
+                <DataBackups OnChanged="RefreshCountAsync" />
+                break;
+            case "analytics":
+                <DataAnalyticsConfiguration OnChanged="RefreshCountAsync" />
+                break;
+            case "analytics-backups":
+                <DataBackups Role="DatabaseRole.Analytics" OnChanged="RefreshCountAsync" />
+                break;
+            case "reset":
+                <DataReset />
+                break;
+            default:
+                <SystemVersion />
+                break;
         }
-
-        <div class="dc-stats">
-            <div class="dc-stat"><span class="dc-stat-tile"><Icon Name="layers" Size="20" /></span><strong style="font-size:20px">@_info.ApplicationVersion</strong><span>Application</span></div>
-            <div class="dc-stat dc-stat-violet"><span class="dc-stat-tile"><Icon Name="database" Size="20" /></span><strong style="font-size:20px">@(_info.DatabaseSchemaVersion?.ToString() ?? "—")</strong><span>Database schema</span></div>
-            <div class="@("dc-stat " + (_info.State == DatabaseVersionState.NewerThanApplication ? "dc-stat-amber" : "dc-stat-green"))"><span class="dc-stat-tile"><Icon Name="@(_info.State == DatabaseVersionState.NewerThanApplication ? "alert" : "check-circle")" Size="20" /></span><strong style="font-size:20px">@(_info.State == DatabaseVersionState.NewerThanApplication ? "Update needed" : "Up to date")</strong><span>Database state</span></div>
-        </div>
-
-        <div class="dc-dash-grid">
-            <div class="dc-dash-col">
-                <section class="dc-card">
-                    <div class="dc-card-head"><h3><Icon Name="layers" Size="16" /> Versions</h3></div>
-                    <dl class="dc-data-kv">
-                        <dt>Application layer</dt><dd><code>@_info.ApplicationVersion</code></dd>
-                        <dt>Schema this build expects</dt><dd><code>@_info.ExpectedSchemaVersion</code></dd>
-                        <dt>Schema in the database</dt><dd><code>@(_info.DatabaseSchemaVersion?.ToString() ?? "not recorded")</code></dd>
-                        <dt>Last started by</dt><dd>@(_info.DatabaseApplicationVersion is { Length: > 0 } last ? $"DynCMS {last}" : "—")</dd>
-                        <dt>Runtime</dt><dd>@_info.Runtime</dd>
-                        <dt>Operating system</dt><dd>@_info.OperatingSystem</dd>
-                    </dl>
-                </section>
-            </div>
-
-            <div class="dc-dash-col">
-                <section class="dc-card">
-                    <div class="dc-card-head"><h3><Icon Name="box" Size="16" /> Plugin compatibility</h3><a href="/admin/settings/plugins">Manage plugins <Icon Name="arrow-right" Size="13" /></a></div>
-                    @if (Plugins.Plugins.Count == 0)
-                    {
-                        <p class="dc-muted">No plugins installed.</p>
-                    }
-                    else
-                    {
-                        <dl class="dc-data-kv">
-                            @foreach (var p in Plugins.Plugins)
-                            {
-                                <dt>@p.Name <small class="dc-muted">@p.Version</small></dt>
-                                <dd>
-                                    @switch (p.Compatibility)
-                                    {
-                                        case PluginCompatibility.Compatible:
-                                            <span class="dc-badge dc-badge-success">Compatible</span> <span class="dc-muted">needs DynCMS @p.MinimumCmsVersion or newer</span>
-                                            break;
-                                        case PluginCompatibility.NeedsNewerCms:
-                                            <span class="dc-badge dc-badge-warn">Update DynCMS</span> <span class="dc-muted">needs DynCMS @p.MinimumCmsVersion or newer</span>
-                                            break;
-                                        default:
-                                            <span class="dc-badge dc-badge-warn">No minimum version</span> <span class="dc-muted">the plugin does not declare one</span>
-                                            break;
-                                    }
-                                </dd>
-                            }
-                        </dl>
-                    }
-                </section>
-            </div>
-        </div>
-    }
+    </main>
 </div>
 
 @code {
-    private SystemVersionInfo? _info;
-    private string? _error;
-    private bool _loading;
+    [Parameter] public string? View { get; set; }
+    [CascadingParameter] private Task<AuthenticationState>? AuthState { get; set; }
+
+    private bool _isAdmin;
+    private int? _backupCount;
+    private int? _analyticsBackupCount;
+    private int _pluginsRunning;
+    private int _pluginsTotal;
+
+    // Editors only get their own API keys here; every other view is for Administrators.
+    private string Mode => _isAdmin ? AdminMode : "api";
+
+    private string AdminMode => (View ?? string.Empty).ToLowerInvariant() switch
+    {
+        "api" => "api",
+        "plugins" => "plugins",
+        "database" or "data" or "overview" => "database",
+        "configuration" or "config" => "configuration",
+        "backups" or "backup" => "backups",
+        "analytics" => "analytics",
+        "analytics-backups" or "analytics-backup" => "analytics-backups",
+        "reset" => "reset",
+        _ => "version"
+    };
 
     protected override async Task OnInitializedAsync()
     {
+        if (AuthState is not null) _isAdmin = (await AuthState).User.IsInRole(CmsRoles.Admin);
         Plugins.Changed += OnPluginsChanged;
-        await LoadAsync();
+        ReadPlugins();
+        if (_isAdmin) await RefreshCountAsync();
     }
 
-    private void OnPluginsChanged() => _ = InvokeAsync(StateHasChanged);
+    private void OnPluginsChanged() => _ = InvokeAsync(() => { ReadPlugins(); StateHasChanged(); });
 
-    private async Task LoadAsync()
+    private void ReadPlugins()
     {
-        _loading = true;
-        _error = null;
-        try
-        {
-            _info = await Versions.GetAsync();
-        }
-        catch (Exception ex)
-        {
-            _error = ex.Message;
-        }
-        finally
-        {
-            _loading = false;
-        }
+        _pluginsTotal = Plugins.Plugins.Count;
+        _pluginsRunning = Plugins.Plugins.Count(p => p.IsRunning);
     }
 
     public void Dispose() => Plugins.Changed -= OnPluginsChanged;
+
+    private async Task RefreshCountAsync()
+    {
+        try
+        {
+            _backupCount = (await Maintenance.ListBackupsAsync()).Count;
+            _analyticsBackupCount = Store.IsAnalyticsSeparate ? (await Maintenance.ListBackupsAsync(DatabaseRole.Analytics)).Count : null;
+        }
+        catch
+        {
+            _backupCount = null;
+            _analyticsBackupCount = null;
+        }
+    }
 }

@@ -58,6 +58,29 @@ public sealed class DynCmsOptions
 
     /// <summary>Plugins: Razor class libraries loaded from <c>App_Data/plugins</c> at runtime (folder, upload switch, controllers).</summary>
     public Plugins.DynCmsPluginOptions Plugins { get; set; } = new();
+
+    /// <summary>The in-memory cache the public site is served from (document types, content, languages, media lookups).</summary>
+    public DynCmsCacheOptions Cache { get; set; } = new();
+}
+
+/// <summary>
+/// Settings for the data cache (<see cref="Services.ContentCache"/>). Pages are resolved and rendered from memory;
+/// every change made through DynCMS (back office, management API, plugins using the services) refreshes the cache
+/// at once, so the defaults need no tuning on a single server.
+/// </summary>
+public sealed class DynCmsCacheOptions
+{
+    /// <summary>
+    /// Serve document types, content, languages and media lookups from memory. Turn off only to rule the cache out
+    /// while diagnosing: every lookup then reads the database again.
+    /// </summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// Reload the cache when it is older than this, to pick up changes made outside this process: another web server
+    /// on the same database, or rows edited by hand. Null (the default) keeps it until something changes.
+    /// </summary>
+    public TimeSpan? RefreshInterval { get; set; }
 }
 
 /// <summary>Settings for the CMouss.IdentityFramework instance that secures the back office.</summary>

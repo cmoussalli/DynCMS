@@ -44,6 +44,7 @@ internal sealed class DynCmsRuntime(
     ICmsIdentity identity,
     AnalyticsQueue analyticsQueue,
     PluginManager plugins,
+    ContentCache cache,
     ILogger<DynCmsRuntime> logger) : IDynCmsRuntime
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -281,6 +282,7 @@ internal sealed class DynCmsRuntime(
             logger.LogWarning("Database configuration {Path} removed from the back office; setup is required again", store.FilePath);
             _ready = false;
             store.Delete();
+            cache.Clear();
             ReleaseConnections();
             ResetIdentity();
         }

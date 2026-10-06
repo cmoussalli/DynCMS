@@ -229,13 +229,13 @@ internal sealed class DemoBlogSeeder(
 
         await ArticleAsync(article.Id, blogPage.Id, "Backing up and restoring the database", imgData.Id, "News", today.AddDays(-33),
             "The back office can take a backup of the database and restore it later; backups are listed with their size and date.",
-            "<p>Administrators find <strong>Backups &amp; restore</strong> in the <em>Data</em> section of the back office. A backup is a copy of the database, stored under <code>App_Data/backups</code>.</p>" +
+            "<p>Administrators find <strong>Backups &amp; restore</strong> in the <em>System</em> section of the back office. A backup is a copy of the database, stored under <code>App_Data/backups</code>.</p>" +
             "<p>Restoring replaces the current database, so the page asks for confirmation first.</p>",
             ["news", "backups"], featured: false, ct);
 
         await ArticleAsync(article.Id, blogPage.Id, "Talking to DynCMS from code: the management API", imgApi.Id, "Tutorial", today.AddDays(-38),
             "A REST API with OpenAPI documentation covers content, document types, media, templates and languages, secured by API keys with scopes.",
-            "<p>Create an API key under <strong>Settings → API &amp; AI agents</strong>, choose its scopes and send it with your requests. " +
+            "<p>Create an API key under <strong>System → API &amp; AI agents</strong>, choose its scopes and send it with your requests. " +
             "The OpenAPI document describes every operation, so a client can be generated in any language.</p>",
             ["tutorial", "api"], featured: false, ct);
 

@@ -1,5 +1,6 @@
 using CMouss.IdentityFramework;
 using DynCMS.Core.Data;
+using DynCMS.Core.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -11,6 +12,7 @@ namespace DynCMS.Core.Security;
 /// </summary>
 public sealed class CmsIdentity : ICmsIdentity
 {
+    private readonly StartupContext _startup;
     private readonly DynCmsIdentityOptions _options;
     private readonly DatabaseConfigurationStore _store;
     private readonly ILogger<CmsIdentity> _logger;
@@ -23,8 +25,9 @@ public sealed class CmsIdentity : ICmsIdentity
     private static readonly object _frameworkLock = new();
     private bool _initialized;
 
-    public CmsIdentity(IOptions<DynCmsOptions> options, DatabaseConfigurationStore store, ILogger<CmsIdentity> logger)
+    public CmsIdentity(IOptions<DynCmsOptions> options, DatabaseConfigurationStore store, StartupContext startup, ILogger<CmsIdentity> logger)
     {
+        _startup = startup;
         _options = options.Value.Identity;
         _store = store;
         _logger = logger;
@@ -61,8 +64,8 @@ public sealed class CmsIdentity : ICmsIdentity
                 TokenEncryptionKey = _options.TokenEncryptionKey,
                 TokenValidationMode = TokenValidationMode.DecryptAndValidate,
                 AuthenticationBackend = AuthenticationBackend.Database,
-                AdministratorUserName = _options.AdminUserName,
-                AdministratorPassword = _options.AdminPassword,
+                AdministratorUserName = _startup.RequestedAdmin?.UserName ?? _options.AdminUserName,
+                AdministratorPassword = _startup.RequestedAdmin?.Password ?? _options.AdminPassword,
                 AdministratorRoleId = CmsRoles.Admin,
                 AdministratorRoleName = CmsRoles.Admin
             });

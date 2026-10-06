@@ -1,19 +1,25 @@
-using DynCMS.Core.Data;
 using DynCMS.Plugins.Models;
-using Microsoft.EntityFrameworkCore;
 
 namespace DynCMS.Core.Services;
 
-public sealed class PublishedContentQuery(IDbContextFactory<DynCmsDbContext> factory, ICultureContext cultureContext) : IPublishedContentQuery
+/// <summary>
+/// The read side of the public site. Every call is answered from the <see cref="ContentCache"/> snapshot, so
+/// resolving a route and everything a template asks for while rendering (children, ancestors, URLs…) costs no
+/// database round trip. Nodes of the snapshot never leave this class: results are mapped to <see cref="PublishedContent"/>.
+/// </summary>
+public sealed class PublishedContentQuery(ContentCache cache, ICultureContext cultureContext) : IPublishedContentQuery
 {
-    /// <summary>What one query call works with: the context, the languages and the language being served.</summary>
-    private sealed record Scope(DynCmsDbContext Db, List<Language> Languages, Language Culture, bool Preview);
+    /// <summary>What one query call works with: the snapshot, the language being served and whether drafts are shown.</summary>
+    private sealed record Scope(ContentSnapshot Content, Language Culture, bool Preview)
+    {
+        public IReadOnlyList<Language> Languages => Content.Languages;
+    }
 
     public async Task<PublishedContent?> GetByRouteAsync(string path, bool preview = false, string? culture = null, CancellationToken ct = default)
     {
         var segments = (path ?? string.Empty).Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        await using var db = await factory.CreateDbContextAsync(ct);
-        var languages = await LanguageService.LoadAsync(db, ct);
+        var content = await cache.GetAsync(ct);
+        var languages = content.Languages;
 
         // A language prefix in the path wins over everything else: /de/ueber-uns is German.
         Language language;
@@ -26,23 +32,22 @@ public sealed class PublishedContentQuery(IDbContextFactory<DynCmsDbContext> fac
         {
             language = Resolve(languages, culture);
         }
-        var scope = new Scope(db, languages, language, preview);
+        var scope = new Scope(content, language, preview);
 
-        var roots = await Candidates(db, preview).Where(n => n.ParentId == null)
-            .OrderBy(n => n.SortOrder).ThenBy(n => n.Name).ToListAsync(ct);
+        var roots = Children(scope, null).ToList();
         if (roots.Count == 0) return null;
 
         var primary = roots[0];
         if (segments.Length == 0) return Visible(primary, scope) ? Map(primary, WithPrefix(scope, "/"), scope) : null;
 
-        var node = Visible(primary, scope) ? await DescendAsync(scope, primary, segments, 0, ct) : null;
+        var node = Visible(primary, scope) ? Descend(scope, primary, segments, 0) : null;
         if (node is not null) return Map(node, WithPrefix(scope, "/" + string.Join('/', segments)), scope);
 
         foreach (var root in roots.Skip(1))
         {
             if (!Visible(root, scope)) continue;
             if (!string.Equals(Segment(root, scope), segments[0], StringComparison.OrdinalIgnoreCase)) continue;
-            node = segments.Length == 1 ? root : await DescendAsync(scope, root, segments, 1, ct);
+            node = segments.Length == 1 ? root : Descend(scope, root, segments, 1);
             if (node is not null) return Map(node, WithPrefix(scope, "/" + string.Join('/', segments)), scope);
         }
 
@@ -51,111 +56,99 @@ public sealed class PublishedContentQuery(IDbContextFactory<DynCmsDbContext> fac
 
     public async Task<PublishedContent?> GetByIdAsync(Guid id, bool preview = false, string? culture = null, CancellationToken ct = default)
     {
-        await using var db = await factory.CreateDbContextAsync(ct);
-        var scope = await ScopeAsync(db, preview, culture, ct);
-        var node = await Candidates(db, preview).FirstOrDefaultAsync(n => n.Id == id, ct);
+        var scope = await ScopeAsync(preview, culture, ct);
+        var node = Find(scope, id);
         if (node is null || !Visible(node, scope)) return null;
-        return Map(node, await BuildUrlAsync(scope, node, ct), scope);
+        return Map(node, BuildUrl(scope, node), scope);
     }
 
     public async Task<PublishedContent?> GetRootAsync(bool preview = false, string? culture = null, CancellationToken ct = default)
     {
-        await using var db = await factory.CreateDbContextAsync(ct);
-        var scope = await ScopeAsync(db, preview, culture, ct);
-        var root = await Candidates(db, preview).Where(n => n.ParentId == null)
-            .OrderBy(n => n.SortOrder).ThenBy(n => n.Name).FirstOrDefaultAsync(ct);
+        var scope = await ScopeAsync(preview, culture, ct);
+        var root = Children(scope, null).FirstOrDefault();
         return root is null || !Visible(root, scope) ? null : Map(root, WithPrefix(scope, "/"), scope);
     }
 
     public async Task<IReadOnlyList<PublishedContent>> GetChildrenAsync(Guid parentId, bool preview = false, string? culture = null, CancellationToken ct = default)
     {
-        await using var db = await factory.CreateDbContextAsync(ct);
-        var scope = await ScopeAsync(db, preview, culture, ct);
-        var parent = await Candidates(db, preview).FirstOrDefaultAsync(n => n.Id == parentId, ct);
+        var scope = await ScopeAsync(preview, culture, ct);
+        var parent = Find(scope, parentId);
         if (parent is null || !Visible(parent, scope)) return [];
-        var parentUrl = await BuildUrlAsync(scope, parent, ct);
-        var children = await Candidates(db, preview).Where(n => n.ParentId == parentId)
-            .OrderBy(n => n.SortOrder).ThenBy(n => n.Name).ToListAsync(ct);
-        return children.Where(c => Visible(c, scope)).Select(c => Map(c, Join(parentUrl, Segment(c, scope)), scope)).ToList();
+        var parentUrl = BuildUrl(scope, parent);
+        return Children(scope, parentId).Where(c => Visible(c, scope)).Select(c => Map(c, Join(parentUrl, Segment(c, scope)), scope)).ToList();
     }
 
     public async Task<IReadOnlyList<PublishedContent>> GetAncestorsAsync(Guid id, bool preview = false, string? culture = null, CancellationToken ct = default)
     {
-        await using var db = await factory.CreateDbContextAsync(ct);
-        var scope = await ScopeAsync(db, preview, culture, ct);
-        var node = await Candidates(db, preview).FirstOrDefaultAsync(n => n.Id == id, ct);
+        var scope = await ScopeAsync(preview, culture, ct);
+        var node = Find(scope, id);
         if (node is null || !Visible(node, scope)) return [];
-        var chain = await AncestorChainAsync(scope, node, ct);
-        var result = new List<PublishedContent>();
-        foreach (var a in chain) result.Add(Map(a, await BuildUrlAsync(scope, a, ct), scope));
-        return result;
+        return AncestorChain(scope, node).Select(a => Map(a, BuildUrl(scope, a), scope)).ToList();
     }
 
     public async Task<IReadOnlyList<PublishedContent>> GetByContentTypeAsync(string contentTypeAlias, bool preview = false, string? culture = null, CancellationToken ct = default)
     {
-        await using var db = await factory.CreateDbContextAsync(ct);
-        var scope = await ScopeAsync(db, preview, culture, ct);
-        var nodes = await Candidates(db, preview).Where(n => n.ContentType.Alias == contentTypeAlias)
-            .OrderByDescending(n => n.PublishedAt ?? n.UpdatedAt).ToListAsync(ct);
-        var result = new List<PublishedContent>();
-        foreach (var n in nodes.Where(n => Visible(n, scope))) result.Add(Map(n, await BuildUrlAsync(scope, n, ct), scope));
-        return result;
+        var scope = await ScopeAsync(preview, culture, ct);
+        return scope.Content.OfType(contentTypeAlias)
+            .Where(n => Candidate(n, scope) && Visible(n, scope))
+            .OrderByDescending(n => n.PublishedAt ?? n.UpdatedAt)
+            .Select(n => Map(n, BuildUrl(scope, n), scope))
+            .ToList();
     }
 
     public async Task<string?> GetUrlAsync(Guid id, string? culture = null, CancellationToken ct = default)
     {
-        await using var db = await factory.CreateDbContextAsync(ct);
-        var languages = await LanguageService.LoadAsync(db, ct);
-        var language = Resolve(languages, culture);
-        var node = await db.ContentNodes.AsNoTracking().Include(n => n.ContentType).FirstOrDefaultAsync(n => n.Id == id, ct);
+        var content = await cache.GetAsync(ct);
+        var language = Resolve(content.Languages, culture);
+        var node = content.Node(id);
         if (node is null) return null;
-        var scope = new Scope(db, languages, language, Preview: !node.IsPublishedIn(language.IsoCode));
-        return await BuildUrlAsync(scope, node, ct);
+        var scope = new Scope(content, language, Preview: !node.IsPublishedIn(language.IsoCode));
+        return BuildUrl(scope, node);
     }
 
     public async Task<IReadOnlyList<CultureLink>> GetCultureLinksAsync(Guid id, bool preview = false, string? culture = null, CancellationToken ct = default)
     {
-        await using var db = await factory.CreateDbContextAsync(ct);
-        var languages = await LanguageService.LoadAsync(db, ct);
+        var content = await cache.GetAsync(ct);
+        var languages = content.Languages;
         var current = Resolve(languages, culture);
-        var node = await Candidates(db, preview).FirstOrDefaultAsync(n => n.Id == id, ct);
-        if (node is null) return [];
+        var node = content.Node(id);
+        if (node is null || !(preview || node.IsPublished)) return [];
 
         var links = new List<CultureLink>();
         foreach (var language in languages)
         {
-            var scope = new Scope(db, languages, language, preview);
+            var scope = new Scope(content, language, preview);
             if (!Visible(node, scope)) continue;
-            links.Add(new CultureLink(language.IsoCode, language.Name, await BuildUrlAsync(scope, node, ct), language.Is(current.IsoCode), language.IsDefault));
+            links.Add(new CultureLink(language.IsoCode, language.Name, BuildUrl(scope, node), language.Is(current.IsoCode), language.IsDefault));
         }
         return links;
     }
 
-    public async Task<string> ResolveCultureAsync(string? culture = null, CancellationToken ct = default)
-    {
-        await using var db = await factory.CreateDbContextAsync(ct);
-        return Resolve(await LanguageService.LoadAsync(db, ct), culture).IsoCode;
-    }
+    public async Task<string> ResolveCultureAsync(string? culture = null, CancellationToken ct = default) =>
+        Resolve((await cache.GetAsync(ct)).Languages, culture).IsoCode;
 
     // ---- language resolution ----
 
-    private async Task<Scope> ScopeAsync(DynCmsDbContext db, bool preview, string? culture, CancellationToken ct)
+    private async ValueTask<Scope> ScopeAsync(bool preview, string? culture, CancellationToken ct)
     {
-        var languages = await LanguageService.LoadAsync(db, ct);
-        return new Scope(db, languages, Resolve(languages, culture), preview);
+        var content = await cache.GetAsync(ct);
+        return new Scope(content, Resolve(content.Languages, culture), preview);
     }
 
     /// <summary>Explicit culture, else the one set on the culture context, else the language prefix of the current path, else the default.</summary>
-    private Language Resolve(List<Language> languages, string? culture) => cultureContext.ResolveLanguage(languages, culture);
+    private Language Resolve(IReadOnlyList<Language> languages, string? culture) => cultureContext.ResolveLanguage(languages, culture);
 
     // ---- visibility and per-language projections ----
 
     /// <summary>Nodes that might be visible: everything in preview, otherwise those published in at least one language.</summary>
-    private static IQueryable<ContentNode> Candidates(DynCmsDbContext db, bool preview)
-    {
-        var q = db.ContentNodes.AsNoTracking().Include(n => n.ContentType).ThenInclude(t => t.Properties);
-        return preview ? q : q.Where(n => n.IsPublished);
-    }
+    private static bool Candidate(ContentNode n, Scope scope) => scope.Preview || n.IsPublished;
+
+    /// <summary>The candidates under <paramref name="parentId"/> (the roots for null) in sibling order.</summary>
+    private static IEnumerable<ContentNode> Children(Scope scope, Guid? parentId) =>
+        scope.Content.Children(parentId).Where(n => Candidate(n, scope));
+
+    private static ContentNode? Find(Scope scope, Guid id) =>
+        scope.Content.Node(id) is { } n && Candidate(n, scope) ? n : null;
 
     /// <summary>Whether the node exists in the scope's language: invariant content always does (when published); variants must be published (or, in preview, created) in it.</summary>
     private static bool Visible(ContentNode n, Scope scope)
@@ -219,35 +212,35 @@ public sealed class PublishedContentQuery(IDbContextFactory<DynCmsDbContext> fac
     private static string Join(string parentUrl, string segment) =>
         parentUrl.EndsWith('/') ? parentUrl + segment : parentUrl + "/" + segment;
 
-    private static async Task<ContentNode?> DescendAsync(Scope scope, ContentNode start, string[] segments, int index, CancellationToken ct)
+    private static ContentNode? Descend(Scope scope, ContentNode start, string[] segments, int index)
     {
         var current = start;
         for (var i = index; i < segments.Length; i++)
         {
             var seg = segments[i];
-            var children = await Candidates(scope.Db, scope.Preview).Where(n => n.ParentId == current.Id).ToListAsync(ct);
-            var next = children.FirstOrDefault(c => Visible(c, scope) && string.Equals(Segment(c, scope), seg, StringComparison.OrdinalIgnoreCase));
+            var next = Children(scope, current.Id).FirstOrDefault(c => Visible(c, scope) && string.Equals(Segment(c, scope), seg, StringComparison.OrdinalIgnoreCase));
             if (next is null) return null;
             current = next;
         }
         return current;
     }
 
-    private static async Task<List<ContentNode>> AncestorChainAsync(Scope scope, ContentNode node, CancellationToken ct)
+    private static List<ContentNode> AncestorChain(Scope scope, ContentNode node)
     {
-        var ids = node.AncestorIds.ToList();
-        if (ids.Count == 0) return [];
-        var nodes = await Candidates(scope.Db, scope.Preview).Where(n => ids.Contains(n.Id)).ToListAsync(ct);
-        return ids.Select(i => nodes.FirstOrDefault(n => n.Id == i)).Where(n => n is not null).Cast<ContentNode>().ToList();
+        var chain = new List<ContentNode>();
+        foreach (var id in node.AncestorIds)
+        {
+            if (Find(scope, id) is { } ancestor) chain.Add(ancestor);
+        }
+        return chain;
     }
 
-    private static async Task<string> BuildUrlAsync(Scope scope, ContentNode node, CancellationToken ct)
+    private static string BuildUrl(Scope scope, ContentNode node)
     {
-        var chain = await AncestorChainAsync(scope, node, ct);
+        var chain = AncestorChain(scope, node);
         chain.Add(node);
 
-        var primaryRootId = await Candidates(scope.Db, scope.Preview).Where(n => n.ParentId == null)
-            .OrderBy(n => n.SortOrder).ThenBy(n => n.Name).Select(n => (Guid?)n.Id).FirstOrDefaultAsync(ct);
+        var primaryRootId = Children(scope, null).FirstOrDefault()?.Id;
 
         var parts = chain[0].Id == primaryRootId ? chain.Skip(1) : chain;
         var url = "/" + string.Join('/', parts.Select(n => Segment(n, scope)));

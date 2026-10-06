@@ -5,32 +5,17 @@ using Microsoft.EntityFrameworkCore;
 
 namespace DynCMS.Core.Services;
 
-public sealed class ContentTypeService(IDbContextFactory<DynCmsDbContext> factory) : IContentTypeService
+public sealed class ContentTypeService(IDbContextFactory<DynCmsDbContext> factory, ContentCache cache) : IContentTypeService
 {
-    public async Task<IReadOnlyList<ContentType>> GetAllAsync(CancellationToken ct = default)
-    {
-        await using var db = await factory.CreateDbContextAsync(ct);
-        return await db.ContentTypes.AsNoTracking()
-            .Include(t => t.Properties.OrderBy(p => p.SortOrder))
-            .OrderBy(t => t.SortOrder).ThenBy(t => t.Name)
-            .ToListAsync(ct);
-    }
+    // Reads are answered from the content cache, as copies: the back office edits them in place before saving.
+    public async Task<IReadOnlyList<ContentType>> GetAllAsync(CancellationToken ct = default) =>
+        (await cache.GetSchemaAsync(ct)).ContentTypes.Select(t => t.Clone()).ToList();
 
-    public async Task<ContentType?> GetAsync(Guid id, CancellationToken ct = default)
-    {
-        await using var db = await factory.CreateDbContextAsync(ct);
-        return await db.ContentTypes.AsNoTracking()
-            .Include(t => t.Properties.OrderBy(p => p.SortOrder))
-            .FirstOrDefaultAsync(t => t.Id == id, ct);
-    }
+    public async Task<ContentType?> GetAsync(Guid id, CancellationToken ct = default) =>
+        (await cache.GetSchemaAsync(ct)).Type(id)?.Clone();
 
-    public async Task<ContentType?> GetByAliasAsync(string alias, CancellationToken ct = default)
-    {
-        await using var db = await factory.CreateDbContextAsync(ct);
-        return await db.ContentTypes.AsNoTracking()
-            .Include(t => t.Properties.OrderBy(p => p.SortOrder))
-            .FirstOrDefaultAsync(t => t.Alias == alias, ct);
-    }
+    public async Task<ContentType?> GetByAliasAsync(string alias, CancellationToken ct = default) =>
+        (await cache.GetSchemaAsync(ct)).TypeByAlias(alias)?.Clone();
 
     public async Task<bool> AliasExistsAsync(string alias, Guid? excludeId = null, CancellationToken ct = default)
     {
@@ -119,6 +104,7 @@ public sealed class ContentTypeService(IDbContextFactory<DynCmsDbContext> factor
         }
 
         await db.SaveChangesAsync(ct);
+        cache.Invalidate();
         return (await GetAsync(contentType.Id, ct))!;
     }
 
@@ -149,5 +135,6 @@ public sealed class ContentTypeService(IDbContextFactory<DynCmsDbContext> factor
         }
 
         await db.SaveChangesAsync(ct);
+        cache.Invalidate();
     }
 }

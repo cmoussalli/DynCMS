@@ -34,7 +34,7 @@
             <button type="button" class="dc-btn dc-btn-danger" @onclick="() => _confirm = true" disabled="@(_busy || !_acknowledged)">
                 @if (_busy) { <span class="dc-spinner" style="border-color: rgba(255,255,255,.35); border-top-color: #fff;"></span><span>Removing…</span> } else { <Icon Name="trash" Size="14" /><span>Remove configuration and open setup</span> }
             </button>
-            <a class="dc-btn" href="/admin/data/backups"><Icon Name="save" Size="14" /> Take a backup first</a>
+            <a class="dc-btn" href="/admin/system/backups"><Icon Name="save" Size="14" /> Take a backup first</a>
         </div>
     </section>
 </div>

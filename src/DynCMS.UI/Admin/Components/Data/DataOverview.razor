@@ -31,7 +31,7 @@
             {
                 <div class="dc-stat dc-stat-amber"><span class="dc-stat-tile"><Icon Name="hard-drive" Size="20" /></span><strong style="font-size:20px">@DataFormat.Bytes(_info.SqliteFileSize)</strong><span>On disk</span></div>
             }
-            <a class="dc-stat dc-stat-teal" href="/admin/data/backups"><span class="dc-stat-tile"><Icon Name="save" Size="20" /></span><strong>@(_backups?.Count ?? 0)</strong><span>Backups</span></a>
+            <a class="dc-stat dc-stat-teal" href="/admin/system/backups"><span class="dc-stat-tile"><Icon Name="save" Size="20" /></span><strong>@(_backups?.Count ?? 0)</strong><span>Backups</span></a>
         </div>
 
         <div class="dc-dash-grid">
@@ -39,7 +39,7 @@
                 <section class="dc-card">
                     <div class="dc-card-head">
                         <h3><Icon Name="sliders" Size="16" /> Connection</h3>
-                        <a href="/admin/data/configuration">Edit configuration <Icon Name="arrow-right" Size="13" /></a>
+                        <a href="/admin/system/configuration">Edit configuration <Icon Name="arrow-right" Size="13" /></a>
                     </div>
                     <dl class="dc-data-kv">
                         <dt>Engine</dt><dd>@ProviderName</dd>
@@ -71,7 +71,7 @@
                             @if (_busy) { <span class="dc-spinner"></span> } else { <Icon Name="save" Size="14" /> }
                             <span>Back up now</span>
                         </button>
-                        <a class="dc-btn" href="/admin/data/backups"><Icon Name="rotate-ccw" Size="14" /> Backups &amp; restore</a>
+                        <a class="dc-btn" href="/admin/system/backups"><Icon Name="rotate-ccw" Size="14" /> Backups &amp; restore</a>
                     </div>
                 </section>
 
@@ -107,7 +107,7 @@
                 <section class="dc-card">
                     <div class="dc-card-head">
                         <h3><Icon Name="clock" Size="16" /> Latest backups</h3>
-                        <a href="/admin/data/backups">All backups <Icon Name="arrow-right" Size="13" /></a>
+                        <a href="/admin/system/backups">All backups <Icon Name="arrow-right" Size="13" /></a>
                     </div>
                     @if (_backups is null || _backups.Count == 0)
                     {
@@ -125,7 +125,7 @@
                                 <li @key="b.FileName">
                                     <span class="dc-recent-tile"><Icon Name="@(b.Provider == DatabaseProvider.SqlServer ? "server" : "file")" Size="16" /></span>
                                     <span class="dc-recent-text">
-                                        <a href="/admin/data/backups" title="@b.FullPath">@b.FileName</a>
+                                        <a href="/admin/system/backups" title="@b.FullPath">@b.FileName</a>
                                         <small>@DataFormat.Bytes(b.Size) · @DataFormat.Ago(b.CreatedUtc)</small>
                                     </span>
                                     @if (!b.IsLocalFile)
@@ -141,7 +141,7 @@
                 <section class="dc-card">
                     <div class="dc-card-head">
                         <h3><Icon Name="bar-chart" Size="16" /> Analytics database</h3>
-                        <a href="/admin/data/analytics">Configure <Icon Name="arrow-right" Size="13" /></a>
+                        <a href="/admin/system/analytics">Configure <Icon Name="arrow-right" Size="13" /></a>
                     </div>
                     @if (_analytics is null)
                     {
@@ -165,9 +165,9 @@
                             @if (_leftover is { } leftover)
                             {
                                 <dt>Old history</dt>
-                                <dd><span class="dc-badge dc-badge-warn">@leftover.PageViews.ToString("N0") page views</span> still in the primary database · <a href="/admin/data/analytics">Move or delete</a></dd>
+                                <dd><span class="dc-badge dc-badge-warn">@leftover.PageViews.ToString("N0") page views</span> still in the primary database · <a href="/admin/system/analytics">Move or delete</a></dd>
                             }
-                            <dt>Backups</dt><dd>@(_analyticsBackups?.Count ?? 0) · <a href="/admin/data/analytics-backups">Analytics backups</a></dd>
+                            <dt>Backups</dt><dd>@(_analyticsBackups?.Count ?? 0) · <a href="/admin/system/analytics-backups">Analytics backups</a></dd>
                         </dl>
                     }
                 </section>
@@ -176,7 +176,7 @@
                     <h3><Icon Name="alert" Size="16" /> Danger zone</h3>
                     <p class="dc-muted" style="font-size:13.5px">Remove the configuration file and run the first-run setup again, for example to move to another database.</p>
                     <div class="dc-data-actions">
-                        <a class="dc-btn dc-btn-danger-ghost" href="/admin/data/reset"><Icon Name="rotate-ccw" Size="14" /> Reset configuration…</a>
+                        <a class="dc-btn dc-btn-danger-ghost" href="/admin/system/reset"><Icon Name="rotate-ccw" Size="14" /> Reset configuration…</a>
                     </div>
                 </section>
             </div>

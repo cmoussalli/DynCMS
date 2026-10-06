@@ -11,8 +11,6 @@
 @page "/admin/settings/dictionary"
 @page "/admin/settings/dictionary/new"
 @page "/admin/settings/dictionary/{DictionaryId:guid}"
-@page "/admin/settings/api"
-@page "/admin/settings/plugins"
 @namespace DynCMS.UI.Admin.Pages
 @implements IDisposable
 @inject IContentTypeService ContentTypes
@@ -118,24 +116,6 @@
                             <a class="dc-tree-link" href="/admin/settings/dictionary"><Icon Name="book" Size="15" /><span class="dc-tree-name">Dictionary</span><small>@_dictionaryCount</small></a>
                         </div>
                     </li>
-                </ul>
-            </div>
-
-            <div class="dc-tree-group">
-                <div class="dc-tree-group-head"><span><Icon Name="zap" Size="14" /> Integrations</span></div>
-                <ul class="dc-tree-list">
-                    <li class="dc-tree-item">
-                        <div class="dc-tree-row @(Mode == "api" ? "dc-selected" : null)" style="padding-left:10px">
-                            <a class="dc-tree-link" href="/admin/settings/api"><Icon Name="lock" Size="15" /><span class="dc-tree-name">API &amp; AI agents</span></a>
-                        </div>
-                    </li>
-                    <AuthorizeView Roles="@CmsRoles.Admin">
-                        <li class="dc-tree-item">
-                            <div class="dc-tree-row @(Mode == "plugins" ? "dc-selected" : null)" style="padding-left:10px">
-                                <a class="dc-tree-link" href="/admin/settings/plugins"><Icon Name="box" Size="15" /><span class="dc-tree-name">Plugins</span><small>@_pluginsRunning/@_pluginsTotal</small></a>
-                            </div>
-                        </li>
-                    </AuthorizeView>
                 </ul>
             </div>
 
@@ -273,14 +253,6 @@
                 </div>
             </div>
         }
-        else if (Mode == "api")
-        {
-            <ApiKeysPanel />
-        }
-        else if (Mode == "plugins")
-        {
-            <PluginsPanel />
-        }
         else if (Mode == "languages")
         {
             <LanguagesPanel />
@@ -328,7 +300,7 @@
             <div class="dc-workspace-empty">
                 <span class="dc-empty-tile"><Icon Name="settings" Size="32" /></span>
                 <h2>Settings</h2>
-                <p>Manage document types, page templates and partials, the languages of the site and its dictionary of translated texts, review the property editors available to this site, create API keys for integrations and AI agents, and install plugins.</p>
+                <p>Manage document types, page templates and partials, the languages of the site and its dictionary of translated texts and review the property editors available to this site.</p>
                 <div class="dc-inline">
                     <a class="dc-btn dc-btn-primary" href="/admin/settings/document-types/new"><Icon Name="plus" Size="14" /> New document type</a>
                     <a class="dc-btn" href="/admin/settings/templates/new"><Icon Name="plus" Size="14" /> New template</a>
@@ -351,8 +323,6 @@
     private IReadOnlyList<TemplateDefinition> _pages = [];
     private IReadOnlyList<TemplateDefinition> _partials = [];
     private int _dictionaryCount;
-    private int _pluginsRunning;
-    private int _pluginsTotal;
     private IReadOnlyList<PluginMenuItem> _pluginSettingsLinks = [];
 
     private string Mode
@@ -369,8 +339,6 @@
             if (path.EndsWith("/new", StringComparison.OrdinalIgnoreCase)) return "new";
             if (path.EndsWith("/templates", StringComparison.OrdinalIgnoreCase)) return "templates";
             if (path.EndsWith("/editors", StringComparison.OrdinalIgnoreCase)) return "editors";
-            if (path.EndsWith("/api", StringComparison.OrdinalIgnoreCase)) return "api";
-            if (path.EndsWith("/plugins", StringComparison.OrdinalIgnoreCase)) return "plugins";
             if (path.EndsWith("/languages", StringComparison.OrdinalIgnoreCase)) return "languages";
             return Id is null ? "overview" : "type";
         }
@@ -412,8 +380,6 @@
     private void ReadPlugins()
     {
         var plugins = Plugins.Plugins;
-        _pluginsTotal = plugins.Count;
-        _pluginsRunning = plugins.Count(p => p.IsRunning);
         _pluginSettingsLinks = plugins.Where(p => p.IsRunning)
             .SelectMany(p => p.MenuItems)
             .Where(m => m.Placement == PluginMenuPlacement.Settings)

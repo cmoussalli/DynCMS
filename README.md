@@ -149,7 +149,7 @@ four to nuget.org through `.github/workflows/nuget.yml`.
 ## Writing a plugin
 
 A plugin is a Razor class library that references **only** `DynCMS.Plugins.Sdk`. An administrator uploads it under
-**Settings → Plugins** (a `.zip` or a `.dll`), or you copy it into `App_Data/plugins/{id}/`. It starts without a
+**System → Plugins** (a `.zip` or a `.dll`), or you copy it into `App_Data/plugins/{id}/`. It starts without a
 redeploy or a restart, and can be stopped, reloaded and uninstalled the same way. A plugin can bring:
 
 - **Pages** (`@page` components). Routes under `/admin/…` render inside the back office, any other route inside the site layout.
@@ -281,7 +281,7 @@ also reachable under a language prefix (`/de/hello`).
 dotnet build
 ```
 
-Every build produces `bin/Debug/Acme.Hello.plugin.zip`. Upload it under **Settings → Plugins**, or use the
+Every build produces `bin/Debug/Acme.Hello.plugin.zip`. Upload it under **System → Plugins**, or use the
 `POST /api/v1/plugins/upload` endpoint with an API key that has the `plugins:manage` scope.
 
 For a tight edit-build-test loop, point the build straight at a site's plugin folder and press **Reload** on the Plugins page:
@@ -314,7 +314,7 @@ editor, a template and site head/footer slots.
 ## API and AI agents
 
 Everything in the back office is also available programmatically at `/api/v1` (OpenAPI at `/api/v1/openapi.json`) and as an
-MCP server at `/mcp`. Authenticate with an **API key** created under **Settings → API & AI agents**; it acts as you,
+MCP server at `/mcp`. Authenticate with an **API key** created under **System → API & AI agents**; it acts as you,
 limited to the scopes you pick:
 
 ```bash

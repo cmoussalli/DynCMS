@@ -1,7 +1,7 @@
 <Project>
   <!-- NuGet metadata shared by the packable projects (Core, UI, Host). DynCMS.Web sets IsPackable=false. -->
   <PropertyGroup>
-    <Version>0.1.2</Version>
+    <Version>0.2.0</Version>
     <Authors>DynCMS</Authors>
     <PackageTags>cms;blazor;aspnetcore;dyncms</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

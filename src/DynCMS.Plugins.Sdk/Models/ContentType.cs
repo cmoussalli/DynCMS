@@ -31,4 +31,14 @@ public class ContentType
         .OrderBy(p => p.SortOrder)
         .Select(p => string.IsNullOrWhiteSpace(p.GroupName) ? "Content" : p.GroupName)
         .Distinct(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>A detached copy (properties included) that can be edited without touching the cached original.</summary>
+    public ContentType Clone()
+    {
+        var copy = (ContentType)MemberwiseClone();
+        copy.AllowedChildTypeAliases = [.. AllowedChildTypeAliases];
+        copy.AllowedTemplateAliases = [.. AllowedTemplateAliases];
+        copy.Properties = Properties.Select(p => p.Clone()).ToList();
+        return copy;
+    }
 }

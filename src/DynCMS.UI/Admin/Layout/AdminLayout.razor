@@ -19,9 +19,9 @@
 
         <nav class="dc-nav" aria-label="Sections">
             <NavLink href="@DynCmsUi.AdminBasePath" Match="NavLinkMatch.All" title="Dashboard"><Icon Name="grid" Size="17" /><span>Dashboard</span></NavLink>
+            <NavLink href="/admin/analytics" title="Analytics"><Icon Name="bar-chart" Size="17" /><span>Analytics</span></NavLink>
             <NavLink href="/admin/content" title="Content"><Icon Name="document" Size="17" /><span>Content</span></NavLink>
             <NavLink href="/admin/media" title="Media"><Icon Name="image" Size="17" /><span>Media</span></NavLink>
-            <NavLink href="/admin/analytics" title="Analytics"><Icon Name="bar-chart" Size="17" /><span>Analytics</span></NavLink>
             @foreach (var item in PluginMenu)
             {
                 @if (string.IsNullOrWhiteSpace(item.Roles))
@@ -36,13 +36,12 @@
                 }
             }
             <span class="dc-nav-sep" aria-hidden="true"></span>
-            <NavLink href="/admin/settings" title="Settings"><Icon Name="settings" Size="17" /><span>Settings</span></NavLink>
             <AuthorizeView Roles="@CmsRoles.Admin">
-                <NavLink href="/admin/users" title="Users &amp; security"><Icon Name="shield" Size="17" /><span>Users</span></NavLink>
                 <NavLink href="/admin/files" title="Files in wwwroot"><Icon Name="folder" Size="17" /><span>Files</span></NavLink>
-                <NavLink href="/admin/data" title="Data"><Icon Name="database" Size="17" /><span>Data</span></NavLink>
-                <NavLink href="/admin/system" title="Application and database version"><Icon Name="info" Size="17" /><span>System</span></NavLink>
+                <NavLink href="/admin/users" title="Users &amp; security"><Icon Name="shield" Size="17" /><span>Users</span></NavLink>
             </AuthorizeView>
+            <NavLink href="/admin/settings" title="Settings"><Icon Name="settings" Size="17" /><span>Settings</span></NavLink>
+            <NavLink href="/admin/system" title="Version, integrations, plugins, database and backups"><Icon Name="info" Size="17" /><span>System</span></NavLink>
         </nav>
 
         <div class="dc-topbar-end">

@@ -187,6 +187,26 @@
                 }
             </section>
 
+            <section class="dc-setup-section">
+                <h4>6. Administrator account</h4>
+                <div class="dc-form-grid">
+                    <label class="dc-field">
+                        <span class="dc-label">User name</span>
+                        <input class="dc-input" type="text" @bind="_request.AdminUserName" @bind:after="ClearResult" autocomplete="username" disabled="@_busy" />
+                    </label>
+                    <span></span>
+                    <label class="dc-field">
+                        <span class="dc-label">Password</span>
+                        <input class="dc-input" type="password" @bind="_request.AdminPassword" @bind:after="ClearResult" autocomplete="new-password" disabled="@_busy" />
+                    </label>
+                    <label class="dc-field">
+                        <span class="dc-label">Confirm password</span>
+                        <input class="dc-input" type="password" @bind="_request.AdminPasswordConfirm" @bind:after="ClearResult" autocomplete="new-password" disabled="@_busy" />
+                    </label>
+                </div>
+                <small class="dc-muted">You sign in to the back office with this account. At least 8 characters. Ignored when the existing database already has an administrator.</small>
+            </section>
+
             @if (_result is not null)
             {
                 <div class="dc-setup-result @(_result.Success ? "dc-setup-result-ok" : "dc-setup-result-error")" role="status">

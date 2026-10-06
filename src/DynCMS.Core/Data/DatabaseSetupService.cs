@@ -45,6 +45,11 @@ public sealed class DatabaseSetupRequest
     /// </summary>
     public StarterContent StarterContent { get; set; } = StarterContent.EmptySite;
 
+    /// <summary>Administrator account created with the database. Ignored when the database already has users.</summary>
+    public string AdminUserName { get; set; } = "admin";
+    public string AdminPassword { get; set; } = string.Empty;
+    public string AdminPasswordConfirm { get; set; } = string.Empty;
+
     public DatabaseConfiguration ToConfiguration() => Provider switch
     {
         DatabaseProvider.Sqlite => new DatabaseConfiguration
@@ -150,6 +155,14 @@ internal sealed class DatabaseSetupService(
         if (runtime.IsReady || store.Current is not null)
             return DatabaseTestResult.Fail("The database has already been configured.", $"Delete {store.FilePath} and restart the application to run the setup again.");
 
+        var adminUser = request.AdminUserName.Trim();
+        if (adminUser.Length == 0)
+            return DatabaseTestResult.Fail("Enter a user name for the administrator.");
+        if (request.AdminPassword.Length < 8)
+            return DatabaseTestResult.Fail("The administrator password must be at least 8 characters long.");
+        if (request.AdminPassword != request.AdminPasswordConfirm)
+            return DatabaseTestResult.Fail("The two administrator passwords do not match.");
+
         var test = await TestConnectionAsync(request, DatabaseRole.Primary, ct);
         if (!test.Success) return test;
 
@@ -181,6 +194,7 @@ internal sealed class DatabaseSetupService(
 
         // The seeders run as startup tasks inside InitializeAfterSetupAsync; this is how they learn what was picked.
         startup.RequestedStarterContent = request.StarterContent;
+        startup.RequestedAdmin = (adminUser, request.AdminPassword);
         try
         {
             await runtime.InitializeAfterSetupAsync(ct);
@@ -193,6 +207,7 @@ internal sealed class DatabaseSetupService(
         finally
         {
             startup.RequestedStarterContent = null;
+            startup.RequestedAdmin = null;
         }
 
         // An existing site that already recorded page views into its content database, now with a separate analytics

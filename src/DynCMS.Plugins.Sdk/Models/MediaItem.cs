@@ -17,4 +17,7 @@ public class MediaItem
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
     public bool IsImage => MimeType?.StartsWith("image/", StringComparison.OrdinalIgnoreCase) == true;
+
+    /// <summary>A detached copy that can be edited without touching the cached original.</summary>
+    public MediaItem Clone() => (MediaItem)MemberwiseClone();
 }

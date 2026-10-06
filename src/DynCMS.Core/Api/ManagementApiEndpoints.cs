@@ -313,7 +313,7 @@ public static class ManagementApiEndpoints
                 Version = "v1",
                 Description =
                     "Manage a DynCMS site programmatically: languages, the dictionary, document types, templates, content, media, users and API keys. " +
-                    "Authenticate with `Authorization: Bearer <api key>` (create keys in the back office under Settings → API & AI agents). " +
+                    "Authenticate with `Authorization: Bearer <api key>` (create keys in the back office under System → API & AI agents). " +
                     $"AI agents can also use the MCP server at `{api.McpPath}` with the same key. Start with `GET {basePath}/` to see who you are and what you may do."
             };
             document.Components ??= new OpenApiComponents();

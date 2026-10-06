@@ -80,7 +80,7 @@ public sealed class DynCmsAuthenticationHandler(
             Response.StatusCode = StatusCodes.Status401Unauthorized;
             Response.Headers.WWWAuthenticate = "Bearer realm=\"DynCMS\"";
             return Response.WriteAsJsonAsync(
-                new ProblemDto(401, "Unauthorized", "Send a DynCMS API key as 'Authorization: Bearer <key>'. Keys are created in the back office under Settings → API & AI agents.", null),
+                new ProblemDto(401, "Unauthorized", "Send a DynCMS API key as 'Authorization: Bearer <key>'. Keys are created in the back office under System → API & AI agents.", null),
                 ApiJson.Options, cancellationToken: Context.RequestAborted);
         }
 

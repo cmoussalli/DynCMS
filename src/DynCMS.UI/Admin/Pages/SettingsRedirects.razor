@@ -1,0 +1,14 @@
+@page "/admin/settings/api"
+@page "/admin/settings/plugins"
+@namespace DynCMS.UI.Admin.Pages
+@attribute [Authorize]
+@inject NavigationManager Nav
+
+@code {
+    // API keys and plugins moved to the System section; keep old links and bookmarks working.
+    protected override void OnInitialized()
+    {
+        var path = Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0].TrimEnd('/');
+        Nav.NavigateTo(path.EndsWith("/plugins", StringComparison.OrdinalIgnoreCase) ? "/admin/system/plugins" : "/admin/system/api", replace: true);
+    }
+}

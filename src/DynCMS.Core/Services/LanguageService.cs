@@ -5,13 +5,11 @@ using Microsoft.EntityFrameworkCore;
 
 namespace DynCMS.Core.Services;
 
-public sealed class LanguageService(IDbContextFactory<DynCmsDbContext> factory, DictionaryCache dictionary) : ILanguageService
+public sealed class LanguageService(IDbContextFactory<DynCmsDbContext> factory, DictionaryCache dictionary, ContentCache cache) : ILanguageService
 {
-    public async Task<IReadOnlyList<Language>> GetAllAsync(CancellationToken ct = default)
-    {
-        await using var db = await factory.CreateDbContextAsync(ct);
-        return await LoadAsync(db, ct);
-    }
+    // Reads are answered from the content cache, as copies: callers may edit what they get.
+    public async Task<IReadOnlyList<Language>> GetAllAsync(CancellationToken ct = default) =>
+        (await cache.GetSchemaAsync(ct)).Languages.Select(l => l.Clone()).ToList();
 
     /// <summary>Loads the languages with a context the caller already has open (used by the content services).</summary>
     internal static async Task<List<Language>> LoadAsync(DynCmsDbContext db, CancellationToken ct) =>
@@ -19,19 +17,15 @@ public sealed class LanguageService(IDbContextFactory<DynCmsDbContext> factory, 
             .OrderByDescending(l => l.IsDefault).ThenBy(l => l.SortOrder).ThenBy(l => l.Name)
             .ToListAsync(ct);
 
-    public async Task<Language> GetDefaultAsync(CancellationToken ct = default)
-    {
-        await using var db = await factory.CreateDbContextAsync(ct);
-        return (await LoadAsync(db, ct)).Default()
+    public async Task<Language> GetDefaultAsync(CancellationToken ct = default) =>
+        (await cache.GetSchemaAsync(ct)).Languages.Default()?.Clone()
             ?? throw new InvalidOperationException("No language has been configured. Add one under Settings → Languages.");
-    }
 
     public async Task<Language?> GetAsync(string isoCode, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(isoCode)) return null;
-        await using var db = await factory.CreateDbContextAsync(ct);
-        var code = isoCode.Trim().ToLowerInvariant();
-        return await db.Languages.AsNoTracking().FirstOrDefaultAsync(l => l.IsoCode.ToLower() == code, ct);
+        var code = isoCode.Trim();
+        return (await cache.GetSchemaAsync(ct)).Languages.FirstOrDefault(l => l.Is(code))?.Clone();
     }
 
     public async Task<Language> SaveAsync(Language language, CancellationToken ct = default)
@@ -85,6 +79,7 @@ public sealed class LanguageService(IDbContextFactory<DynCmsDbContext> factory, 
         }
 
         await db.SaveChangesAsync(ct);
+        cache.Invalidate();
         await dictionary.ReloadAsync(ct);   // fallback chains and the default language are part of the dictionary snapshot
         return (await GetAsync(existing.IsoCode, ct))!;
     }
@@ -97,6 +92,7 @@ public sealed class LanguageService(IDbContextFactory<DynCmsDbContext> factory, 
             ?? throw new InvalidOperationException($"The language '{isoCode}' does not exist.");
         foreach (var l in all) l.IsDefault = l.Id == target.Id;
         await db.SaveChangesAsync(ct);
+        cache.Invalidate();
         await dictionary.ReloadAsync(ct);
         return (await GetAsync(target.IsoCode, ct))!;
     }
@@ -136,6 +132,7 @@ public sealed class LanguageService(IDbContextFactory<DynCmsDbContext> factory, 
         }
 
         await db.SaveChangesAsync(ct);
+        cache.Invalidate();
         await dictionary.ReloadAsync(ct);
     }
 
@@ -151,6 +148,7 @@ public sealed class LanguageService(IDbContextFactory<DynCmsDbContext> factory, 
                 var tracked = await db.Languages.FirstAsync(l => l.Id == current.Id, ct);
                 tracked.IsDefault = true;
                 await db.SaveChangesAsync(ct);
+                cache.Invalidate();
             }
             return current;
         }
@@ -159,6 +157,7 @@ public sealed class LanguageService(IDbContextFactory<DynCmsDbContext> factory, 
         var language = new Language { IsoCode = code, Name = DisplayNameOf(code) ?? code, IsDefault = true, SortOrder = 0 };
         db.Languages.Add(language);
         await db.SaveChangesAsync(ct);
+        cache.Invalidate();
         return language;
     }
 

@@ -9,7 +9,8 @@ namespace DynCMS.Core.Services;
 public sealed class TemplateService(
     IDbContextFactory<DynCmsDbContext> factory,
     ITemplateRegistry registry,
-    ILiquidTemplateEngine engine) : ITemplateService
+    ILiquidTemplateEngine engine,
+    ContentCache cache) : ITemplateService
 {
     public async Task<IReadOnlyList<Template>> GetAllAsync(CancellationToken ct = default)
     {
@@ -74,6 +75,7 @@ public sealed class TemplateService(
         }
 
         await db.SaveChangesAsync(ct);
+        cache.Invalidate();   // content and document types may have lost the alias
         await RefreshRegistryAsync(ct);
         return (await GetAsync(template.Id, ct))!;
     }
@@ -145,6 +147,7 @@ public sealed class TemplateService(
         }
 
         await db.SaveChangesAsync(ct);
+        cache.Invalidate();   // content and document types may have lost the alias
         await RefreshRegistryAsync(ct);
     }
 

@@ -23,12 +23,16 @@ public sealed class DynCmsInitializer(
     IDictionaryService dictionary,
     IAnalyticsSettingsService analyticsSettings,
     ISystemVersionService versions,
+    ContentCache cache,
     IOptions<DynCmsOptions> options,
     ILogger<DynCmsInitializer> logger) : IDynCmsInitializer
 {
     public async Task InitializeAsync(CancellationToken ct = default)
     {
         var config = store.Current ?? throw new DynCmsNotConfiguredException();
+
+        // This runs for a new, switched or restored database: nothing cached from before applies to it.
+        cache.Clear();
         Directory.CreateDirectory(paths.MediaRootPath);
 
         if (config.Provider == DatabaseProvider.Sqlite)

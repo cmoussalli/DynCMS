@@ -91,6 +91,8 @@ public static class ServiceCollectionExtensions
 
         services.TryAddSingleton<IMediaStorage, FileSystemMediaStorage>();
         services.TryAddSingleton<IWebRootFileService, WebRootFileService>();
+        // Data cache: the public site is resolved and rendered from memory; the services below invalidate it on every write.
+        services.TryAddSingleton<ContentCache>();
         services.TryAddScoped<ILanguageService, LanguageService>();
         services.TryAddSingleton<DictionaryCache>();
         services.TryAddScoped<IDictionaryService, DictionaryService>();

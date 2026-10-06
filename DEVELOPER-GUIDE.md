@@ -216,7 +216,7 @@ registrations, in order:
 |---|---|---|
 | Options | `DynCmsOptions` (+ your configure delegate) | `AddOptions` |
 | Singleton (instances) | `ITemplateRegistry`, `IPropertyEditorRegistry` | `TryAddSingleton(instance)` |
-| Singleton | `DynCmsPaths`, `DatabaseConfigurationStore`, `IDbContextFactory<DynCmsDbContext>` → `DynCmsDbContextFactory`, `DynCmsRuntime`, `IDynCmsRuntime` → the same `DynCmsRuntime`, `IDatabaseSetupService` → `DatabaseSetupService`, `IDatabaseMaintenanceService` → `DatabaseMaintenanceService`, `IMediaStorage` → `FileSystemMediaStorage`, `DictionaryCache`, `ILiquidTemplateEngine` → `FluidTemplateEngine`, `ICmsIdentity` → `CmsIdentity`, `IApiKeyService` → `ApiKeyService` | `TryAddSingleton` |
+| Singleton | `DynCmsPaths`, `DatabaseConfigurationStore`, `IDbContextFactory<DynCmsDbContext>` → `DynCmsDbContextFactory`, `DynCmsRuntime`, `IDynCmsRuntime` → the same `DynCmsRuntime`, `IDatabaseSetupService` → `DatabaseSetupService`, `IDatabaseMaintenanceService` → `DatabaseMaintenanceService`, `IMediaStorage` → `FileSystemMediaStorage`, `ContentCache`, `DictionaryCache`, `ILiquidTemplateEngine` → `FluidTemplateEngine`, `ICmsIdentity` → `CmsIdentity`, `IApiKeyService` → `ApiKeyService` | `TryAddSingleton` |
 | Scoped | `ILanguageService`, `IDictionaryService`, `ICultureContext` → `CultureContext`, `IContentTypeService`, `IContentService`, `IPublishedContentQuery`, `IMediaService`, `IDynCmsInitializer`, `ITemplateService`, `IStoredTemplateRenderer`, `ITemplatePreviewService`, `ICmsAccess` → `CmsAccess`, `CmsManagement` | `TryAddScoped` |
 | Plain adds | `AddAuthentication("DynCmsIdentity").AddScheme<AuthenticationSchemeOptions, DynCmsAuthenticationHandler>`, `AddAuthorization()`, `AddHttpContextAccessor()`, `ConfigureHttpJsonOptions` (ignore nulls, camel-case enums), `AddOpenApi()` + `AddOptions<OpenApiOptions>("v1")`, `AddMcpServer(...)` (stateless HTTP transport, `DynCmsMcpTools`) | not `TryAdd` |
 
@@ -290,7 +290,8 @@ file yields setup mode.
 
 `DynCmsRuntime.TryInitializeAsync` → `DynCmsInitializer.InitializeAsync`, in this order:
 
-1. Create the media folder (and the SQLite folder) if missing.
+1. `ContentCache.Clear()`: nothing cached for a previous database applies to this one (§5), then create the media
+   folder (and the SQLite folder) if missing.
 2. `DatabaseSchema.EnsureTablesAsync(db)`: create the database, then any missing table or column (§5).
 3. `ILanguageService.EnsureDefaultAsync(options.DefaultCulture)`: make sure one language exists and is the default
    (`"en"` unless configured; see §6).
@@ -508,6 +509,45 @@ await using var db = await factory.CreateDbContextAsync(ct);
 One context per operation, disposed immediately. No `DbContext` is ever held across an await in a Blazor circuit,
 which sidesteps the classic "a second operation was started on this context" bug. Reads use `AsNoTracking()`.
 Follow this pattern in anything you add.
+
+### The data cache
+
+The public site does not open a context per request: it is resolved and rendered from memory. `ContentCache`
+(singleton, `Services/ContentCache.cs`) holds three parts, each loaded on first use:
+
+| Part | Holds | Read by | Dropped by |
+|---|---|---|---|
+| Schema (`SchemaSnapshot`) | languages, document types with their properties | `ILanguageService` and `IContentTypeService` reads | `Invalidate()`: every write of `IContentTypeService`, `ILanguageService`, `ITemplateService` |
+| Content (`ContentSnapshot`) | every content node (draft and published state), indexed by id, parent and document type, each wired to the cached type | `IPublishedContentQuery` (all of it, preview included) | `InvalidateContent()`: every write of `IContentService`; also whenever the schema is dropped or reloaded |
+| Media | single `MediaItem`s by id, misses included (at most 20 000 entries) | `IMediaService.GetAsync` | `InvalidateMedia()`: every write of `IMediaService` |
+
+Stored templates and the dictionary were already held in memory (`ITemplateRegistry` with the Fluid parse cache,
+`DictionaryCache`), so a warm page costs no database command at all; what remains per request is the analytics
+write, which is queued.
+
+How it behaves:
+
+- **A write is visible at once.** The services invalidate after `SaveChangesAsync` and before raising events, so an
+  event handler, the next request and every open circuit read the new state. The next reader reloads the part; one
+  load runs at a time and concurrent readers wait for it and share the result. A write that lands while a load is
+  running leaves that load marked outdated (a version counter is read before the rows are), so nothing stale sticks.
+- **A content write reloads the tree, not the schema**, so a bulk import through the API does not re-read document
+  types on every call. The tree is one query for all nodes; nodes are not cached individually.
+- **Cached objects are shared and never handed out.** Services return copies (`ContentType.Clone()`,
+  `Language.Clone()`, `MediaItem.Clone()`) because the back office edits what it gets in place, and
+  `IPublishedContentQuery` maps nodes to `PublishedContent`. Do the same in anything that reads the snapshots.
+- **The back-office content services still read the database** (`IContentService` reads, media listings, template
+  reads): they need the current row to edit, and they are not on the request path of the site.
+- **The initializer clears everything** (new, switched or restored database), and so does resetting the
+  configuration.
+- **Memory**: the whole content table is held once, drafts included. Budget roughly the size of the `ContentNodes`
+  table.
+
+`DynCmsOptions.Cache` (§16): `Enabled = false` makes every lookup read the database again (each
+`IPublishedContentQuery` call then loads the whole tree, so it is slower than the cache by a wide margin: use it to
+rule the cache out, not to run a site). `RefreshInterval` reloads a part once it is older than the interval, for
+changes made outside the process: a second web server on the same database, or rows edited by hand. To drop it from
+code, inject `ContentCache` and call `Clear()`.
 
 ---
 ## 6. The content model
@@ -798,9 +838,9 @@ aliases persist. The API layer validates before it calls the service.
 ### `IContentTypeService`
 
 ```csharp
-Task<IReadOnlyList<ContentType>> GetAllAsync();                 // SortOrder, Name; properties ordered
-Task<ContentType?>  GetAsync(Guid id);
-Task<ContentType?>  GetByAliasAsync(string alias);              // SQL ==, case-sensitive on SQLite
+Task<IReadOnlyList<ContentType>> GetAllAsync();                 // SortOrder, Name; properties ordered; copies from the cache (§5)
+Task<ContentType?>  GetAsync(Guid id);                          // a copy from the cache
+Task<ContentType?>  GetByAliasAsync(string alias);              // exact match first, then ignoring case; a copy from the cache
 Task<bool>          AliasExistsAsync(string alias, Guid? excludeId = null);
 Task<ContentType>   SaveAsync(ContentType contentType);
 Task<int>           CountContentAsync(Guid contentTypeId);
@@ -810,7 +850,7 @@ Task                DeleteAsync(Guid id);                       // throws while 
 ### `ILanguageService`
 
 ```csharp
-Task<IReadOnlyList<Language>> GetAllAsync();                    // IsDefault desc, SortOrder, Name
+Task<IReadOnlyList<Language>> GetAllAsync();                    // IsDefault desc, SortOrder, Name; copies from the cache (§5)
 Task<Language>   GetDefaultAsync();                             // throws when none
 Task<Language?>  GetAsync(string isoCode);                      // case-insensitive
 Task<Language>   SaveAsync(Language language);
@@ -840,7 +880,7 @@ Task                  RefreshAsync();                           // reload the ca
 
 ```csharp
 Task<IReadOnlyList<MediaItem>> GetChildrenAsync(Guid? folderId);   // null = root; folders first, SortOrder, Name
-Task<MediaItem?>               GetAsync(Guid id);
+Task<MediaItem?>               GetAsync(Guid id);                  // cached by id (§5); returns a copy
 Task<IReadOnlyList<MediaItem>> GetAncestorsAsync(Guid id);         // root first; one query per level
 Task<IReadOnlyList<MediaItem>> GetRecentAsync(int take = 12);      // files only, CreatedAt desc
 Task<int>                      CountAsync();                       // files only
@@ -887,6 +927,10 @@ public sealed record CultureLink(string IsoCode, string Name, string Url, bool I
 Everything filters on the publish state unless `preview: true`. **Always pass `Content.IsPreview` through**, or
 preview mode will silently show published children under a draft page. `culture` may stay null inside a page: the
 language of the current path is used.
+
+Every call is answered from the `ContentCache` snapshot (§5), preview included, so calling it repeatedly while
+rendering (navigation, breadcrumbs, lists) costs no database round trip. Siblings come in sort order then name;
+`Values` lists the shared values first, then the varying ones in the document type's property order.
 
 ### `ICultureContext`
 
@@ -1437,7 +1481,7 @@ Editors get all five actions on `Content`, `Media` and `Dictionary`, plus `Read`
 Administrators are authorised **by role**, not by permission rows.
 
 **Where permissions are enforced.** Inside the back office, pages are gated by `[Authorize]` and, for `/admin/users`
-and `/admin/data`, `[Authorize(Roles = "Administrators")]`; the Blazor components call the services directly and do
+and `/admin/files`, `[Authorize(Roles = "Administrators")]` (`/admin/system` checks the role per view); the Blazor components call the services directly and do
 not consult the permission rows. The entity/action permissions are enforced by `CmsAccess` in the API layer (§13),
 which is also what decides which scopes a user may put on an API key. Blazor circuits have no reliable `HttpContext`,
 so UI code that needs the caller uses `CmsCaller.From(principal)` and the static `CmsAuthorization` helpers with the
@@ -1478,7 +1522,7 @@ any extra code. `DynCmsOptions.Api` (`DynCms:Api` in configuration) switches the
 
 ### 13.1 API keys
 
-A key is created in the back office at **Settings → API & AI agents** (`/admin/settings/api`) and shown **once**.
+A key is created in the back office at **System → API & AI agents** (`/admin/system/api`) and shown **once**.
 Format: `dcms_` + 32 random bytes as unpadded base64url (48 characters). The `ApiKeys` row holds `Name`, `Prefix`
 (the first 13 characters, for display), `Hash` (lower-case hex SHA-256 of the secret), `UserId`, `UserName`,
 `Scopes`, `CreatedAt`, `ExpiresAt`, `LastUsedAt` (written at most every five minutes), `RevokedAt`. Send it as
@@ -1645,7 +1689,7 @@ gotchas from building it: the MCP SDK needs `TypeInfoResolver` set on a custom `
 ## 14. Backups, restore and database maintenance
 
 `IDatabaseMaintenanceService` (`src/DynCMS.Core/Data/DatabaseMaintenanceService.cs`, singleton) is behind
-`/admin/data` and the `/system/*` API routes. All operations are serialised through one `SemaphoreSlim`.
+`/admin/system` and the `/system/*` API routes. All operations are serialised through one `SemaphoreSlim`.
 
 ```csharp
 public interface IDatabaseMaintenanceService
@@ -1722,17 +1766,22 @@ analytics database, `CountExistingAnalyticsAsync` finds the old page views and t
 them before finishing (`CompleteSetupAsync(request, analytics, history)`). `ResetConfigurationAsync` deletes the configuration file (both entries) and
 returns to setup mode.
 
-**The Data section** (`/admin/data[/{view}]`, Administrators): *Overview* (engine, ready flag, table count, on-disk
+**The System section** (`/admin/system[/{view}]`; the old `/admin/data[/{view}]`, `/admin/settings/api` and
+`/admin/settings/plugins` URLs redirect here) opens on *Version* (`SystemVersion`, application and schema versions,
+plugin compatibility; §25) under an **Application** group. An **Integrations** group holds *API & AI agents*
+(`/admin/system/api`, `ApiKeysPanel`) and *Plugins* (`/admin/system/plugins`, `PluginsPanel`). Everything except
+*API & AI agents* is for Administrators; editors see only that item and land on it. The database views follow:
+*Overview* (`/admin/system/database`: engine, ready flag, table count, on-disk
 size including `-wal`/`-shm`, connection facts, per-table row counts, last five backups, "Back up now");
 *Configuration* (the setup form pre-filled from the current configuration in existing-database mode, "Test
 connection", "Save and switch" behind a confirm, then a forced reload to the login page); *Backups* (note + create,
 upload via `InputFile` with progress, up to 8 GB, download for local files, restore with "Take a backup first" on by
 default, delete); *Reset* (acknowledgement checkbox + confirm → `/setup`). The tree groups these under **Primary
-database**; an **Analytics database** group holds *Configuration* (`/admin/data/analytics`,
+database**; an **Analytics database** group holds *Configuration* (`/admin/system/analytics`,
 `DataAnalyticsConfiguration`: same database or a separate one, connection fields through the shared
 `DatabaseConnectionFields`, a move-or-delete choice for the recorded history, a notice with the same choice for
 history left in the primary database, test, "Save and apply") and *Backups & restore*
-(`/admin/data/analytics-backups`, the same `DataBackups` component with `Role="Analytics"`, which shows a pointer to
+(`/admin/system/analytics-backups`, the same `DataBackups` component with `Role="Analytics"`, which shows a pointer to
 the primary backups while analytics is shared). The overview has an "Analytics database" card. `DataFormat`
 (`Bytes`, `Rows`, `Local`, `Ago`) is the shared formatter.
 
@@ -1873,6 +1922,8 @@ visitor's browser, which also means ad blockers cannot see it.
 | `Analytics.SessionTimeoutMinutes` / `GeoCacheDays` / `GeoLookupDelayMilliseconds` / `QueueCapacity` | 30 / 30 / 250 / 10 000 | worker tuning |
 | `Analytics.MapTileUrl` / `MapTileAttribution` | OpenStreetMap | the back-office map's tiles |
 | `Api.MaxRequestBodyBytes` | 32 MB | **not used anywhere**; uploads are limited by `MaxUploadBytes` and Kestrel's defaults |
+| `Cache.Enabled` | `true` | serve document types, content, languages and media lookups from memory (§5); off = every lookup reads the database, for diagnosing only |
+| `Cache.RefreshInterval` | `null` | reload the cache when older than this (`"00:00:30"`), to pick up changes made outside the process; null = keep until a write through DynCMS invalidates it |
 | `Plugins.Enabled` | `true` | load plugins at all (§25) |
 | `Plugins.RootPath` | `App_Data/plugins` | one sub-folder per plugin |
 | `Plugins.AllowUpload` | `true` | uploads from the back office and the API; off = deploy by copying only |
@@ -2069,10 +2120,10 @@ catch-all page.
 | `/admin/settings/languages` | languages: add, rename, default, mandatory, fallback, remove | authenticated |
 | `/admin/settings/dictionary[/new?parent= \| /{id:guid}]` | dictionary | authenticated |
 | `/admin/settings/editors` | property editor catalogue | authenticated |
-| `/admin/settings/api` | API keys, connection snippets for curl and Claude Code | authenticated |
-| `/admin/settings/plugins` | `PluginsPanel`: install, start, stop, reload, uninstall plugins | `Administrators` |
+| `/admin/settings/api` · `/admin/settings/plugins` | redirect to `/admin/system/api` · `/admin/system/plugins` | authenticated |
 | `/admin/{**rest}` | `PluginPageHost`: mounts the `/admin/…` pages of running plugins, else a not-found panel | authenticated |
-| `/admin/data[/{view}]` (`configuration`, `backups`, `analytics`, `analytics-backups`, `reset`) | Overview, primary configuration and backups, analytics database configuration and backups, reset | `Administrators` |
+| `/admin/system[/{view}]` (`api`, `plugins`, `database`, `configuration`, `backups`, `analytics`, `analytics-backups`, `reset`) | `SystemSection`: version (default), `ApiKeysPanel` (API keys, connection snippets for curl and Claude Code), `PluginsPanel` (install, start, stop, reload, uninstall plugins), database overview, primary configuration and backups, analytics database configuration and backups, reset | `Administrators`; editors see only `api` |
+| `/admin/data[/{view}]` | redirects to `/admin/system[/{view}]` (`/admin/data` → `/admin/system/database`) | `Administrators` |
 | `/admin/analytics[/{view}]` (`pages`, `visitors?path=&visitor=&session=&ip=&country=`, `map`, `sources`, `technology`, `settings`) | `AnalyticsSection` (§15) | authenticated; `settings` needs `Administrators` |
 | `/admin/users` | the identity framework's `IdentityAdminPart` | `Administrators` |
 | `/` · `/{*Path}?preview=true` | `CmsPage`: plugin site pages first, then the content tree | anonymous (preview needs a signed-in user) |
@@ -2277,10 +2328,11 @@ the title and `rel="prev"/"next"` links. The archive's README walks through what
 
 **Scale-out**
 
-- `ITemplateRegistry`, `IPropertyEditorRegistry`, `DictionaryCache`, `DatabaseConfigurationStore`, the API-key
-  validation cache and the Fluid template cache are **per process**. Behind a load balancer, a template saved on
-  node A is not live on node B until node B re-initialises. Stay on a single instance, or add your own invalidation,
-  before scaling out.
+- `ITemplateRegistry`, `IPropertyEditorRegistry`, `ContentCache`, `DictionaryCache`, `DatabaseConfigurationStore`,
+  the API-key validation cache and the Fluid template cache are **per process**. Behind a load balancer, a template
+  saved on node A is not live on node B until node B re-initialises. Stay on a single instance, or add your own
+  invalidation, before scaling out. For content, document types, languages and media, `Cache.RefreshInterval`
+  bounds how stale the other nodes get; templates and the dictionary have no such timer.
 - The identity framework's `IDFManager` is static and process-wide, which is why `CmsIdentity` is a singleton with
   `Reset()` and `RefreshCache()` hooks for database switches and restores.
 - `ReleaseConnections()` clears **all** SQLite and SQL Server connection pools in the process, including the host's
@@ -2289,12 +2341,12 @@ the title and `rel="prev"/"next"` links. The archive's README walks through what
 **Queries**
 
 - Property values are JSON columns: you cannot filter on them in SQL.
-- Every `IPublishedContentQuery` call re-reads the `Languages` table. URL building is two queries per node;
-  `GetByContentTypeAsync` and `GetAncestorsAsync` issue them per result; `GetByRouteAsync` loads all children (with
-  their types) at each level of the path. Fine for hundreds of pages, not for tens of thousands.
+- `IPublishedContentQuery` reads the in-memory `ContentCache` (§5), which holds the whole content tree: no query
+  per call, but every content write makes the next reader load all nodes again. Fine for thousands of pages; for
+  hundreds of thousands, or a site under constant editing, the reload and the memory want measuring.
 - `SearchAsync` is a `LIKE` over name and URL segment, then an in-memory pass over every varying node's per-language
   names when it has not filled `take`. No property or full-text search.
-- There is no output cache. Every request re-queries and re-renders.
+- There is no output cache. Every request re-renders, from cached data.
 
 **Content**
 
@@ -2340,7 +2392,7 @@ them at the source when you touch the area.
    `TemplateRegistry.SetStored` builds a case-insensitive dictionary that throws on duplicates. Saving `Card` next to
    `card` would persist the row and then fail on the registry refresh.
 3. **A committed API key.** `mcp.md` at the repository root contains an API key secret (markdown-escaped). Treat it
-   as leaked: revoke it under Settings → API & AI agents and delete the file. This is also the likely reason a
+   as leaked: revoke it under System → API & AI agents and delete the file. This is also the likely reason a
    configured MCP client gets a `401` from `/mcp`.
 4. **`Api.MaxRequestBodyBytes` is dead.** Nothing reads it; base64 uploads are capped by `MaxUploadBytes` and
    multipart by Kestrel.
@@ -2354,7 +2406,7 @@ them at the source when you touch the area.
    complaint, while the two-argument overload throws.
 9. **`TextArea`'s `placeholder`** is read by the editor but not declared in its `ConfigFields`, so the dialog never
    offers it.
-10. **The archived demo's seeded article** about the API says "Settings → API keys"; the page is "API & AI agents".
+10. **The archived demo's seeded article** about the API says "System → API keys"; the page is "API & AI agents".
 11. **`SqlServer` connection strings** require a port; named instances are not supported.
 
 ---
@@ -2577,7 +2629,7 @@ the sample is `samples/DynCMS.Plugin.Guestbook`.
    `CmsVersion.Application`; a plugin that needs a newer DynCMS, or declares nothing, is not attached (an upload is
    rejected with "requires DynCMS x.y.z or newer ... Update DynCMS first"; a plugin found on disk shows as *Failed*
    with the same message). The comparison ignores `-prerelease` suffixes. The back office *System* tab
-   (`/admin/system`, `GET /api/v1/system/version`, MCP `system_version`) shows the application version, the database
+   (`/admin/system`, the default *Version* view; `GET /api/v1/system/version`, MCP `system_version`) shows the application version, the database
    schema version (`CmsVersion.DatabaseSchema`, recorded in the Settings table under `system.version` at startup;
    bump it when a release changes the database incompatibly) and each plugin's compatibility.
 3. Override what you need:
@@ -2630,7 +2682,7 @@ A **package** is a `.zip` with `bin/` (or the dlls at the root) and an optional 
 SDK's `PackDynCmsPlugin` target (build/DynCMS.Plugins.Sdk.targets, imported by every plugin project) builds `bin/<Configuration>/<name>.plugin.zip` after every build and, with
 `-p:DynCmsPluginDeployDir=<site>/App_Data/plugins`, copies the layout straight into a site (then click *Reload*).
 
-Install by uploading on **Settings → Plugins** (`DynCms:Plugins:AllowUpload`, administrators), through
+Install by uploading on **System → Plugins** (`DynCms:Plugins:AllowUpload`, administrators), through
 `POST /api/v1/plugins/upload` (multipart, `plugins:manage`), or by copying the folder and clicking *Rescan folder* /
 restarting. Uploading a plugin whose id already exists replaces its binaries and keeps `data/` and `settings.json`.
 
