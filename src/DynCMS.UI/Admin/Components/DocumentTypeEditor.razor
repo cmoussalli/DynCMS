@@ -67,6 +67,8 @@ else
                         <header class="dc-group-head">
                             <input class="dc-group-name" type="text" value="@g" @onchange="e => RenameGroup(g, e.Value?.ToString())" title="Rename group" />
                             <span class="dc-spacer"></span>
+                            <button type="button" class="dc-btn dc-btn-icon" title="Move tab up" @onclick="() => MoveGroup(g, -1)" disabled="@(_groups.IndexOf(g) <= 0)"><Icon Name="arrow-up" Size="14" /></button>
+                            <button type="button" class="dc-btn dc-btn-icon" title="Move tab down" @onclick="() => MoveGroup(g, 1)" disabled="@(_groups.IndexOf(g) >= _groups.Count - 1)"><Icon Name="arrow-down" Size="14" /></button>
                             <button type="button" class="dc-btn dc-btn-sm" @onclick="() => OpenAddProperty(g)"><Icon Name="plus" Size="14" /> Add property</button>
                             <button type="button" class="dc-btn dc-btn-icon" title="Remove group" @onclick="() => RemoveGroup(g)" disabled="@(_groups.Count <= 1)"><Icon Name="trash" Size="14" /></button>
                         </header>
@@ -325,6 +327,16 @@ else
         var idx = _groups.IndexOf(oldName);
         if (idx >= 0) _groups[idx] = newName;
         foreach (var p in _type!.Properties.Where(p => p.GroupName == oldName)) p.GroupName = newName;
+    }
+
+    /// <summary>Moves a group (a tab in the content editor); the order is stored in the properties' sort order on save.</summary>
+    private void MoveGroup(string name, int direction)
+    {
+        var i = _groups.IndexOf(name);
+        var j = i + direction;
+        if (i < 0 || j < 0 || j >= _groups.Count) return;
+        (_groups[i], _groups[j]) = (_groups[j], _groups[i]);
+        Renumber();
     }
 
     private void RemoveGroup(string name)

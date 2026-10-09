@@ -21,6 +21,8 @@
                 <span class="dc-dot dc-dot-warn" title="Unpublished changes"></span>
             }
         </a>
+        <button type="button" class="dc-tree-add" title="Move up" @onclick="() => Tree.MoveAsync(Node.Id, -1)"><Icon Name="arrow-up" Size="14" /></button>
+        <button type="button" class="dc-tree-add" title="Move down" @onclick="() => Tree.MoveAsync(Node.Id, 1)"><Icon Name="arrow-down" Size="14" /></button>
         <button type="button" class="dc-tree-add" title="Create under @Node.Name" @onclick="() => Tree.RequestCreateAsync(Node.Id)">
             <Icon Name="plus" Size="14" />
         </button>

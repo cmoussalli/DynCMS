@@ -36,9 +36,12 @@
                 <ul class="dc-tree-list">
                     @foreach (var t in _types)
                     {
+                        var typeId = t.Id;
                         <li class="dc-tree-item" @key="t.Id">
                             <div class="dc-tree-row @(Id == t.Id ? "dc-selected" : null)" style="padding-left:10px">
                                 <a class="dc-tree-link" href="/admin/settings/document-types/@t.Id"><Icon Name="@t.Icon" Size="15" /><span class="dc-tree-name">@t.Name</span></a>
+                                <button type="button" class="dc-tree-add" title="Move up" @onclick="() => MoveTypeAsync(typeId, -1)"><Icon Name="arrow-up" Size="14" /></button>
+                                <button type="button" class="dc-tree-add" title="Move down" @onclick="() => MoveTypeAsync(typeId, 1)"><Icon Name="arrow-down" Size="14" /></button>
                             </div>
                         </li>
                     }
@@ -375,6 +378,12 @@
         _dictionaryCount = await Dictionary.CountAsync();
         ReadTemplates();
         ReadPlugins();
+    }
+
+    private async Task MoveTypeAsync(Guid id, int direction)
+    {
+        await ContentTypes.MoveAsync(id, direction);
+        _types = await ContentTypes.GetAllAsync();
     }
 
     private void ReadPlugins()

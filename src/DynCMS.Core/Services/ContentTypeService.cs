@@ -53,7 +53,7 @@ public sealed class ContentTypeService(IDbContextFactory<DynCmsDbContext> factor
             contentType.CreatedAt = now;
             contentType.UpdatedAt = now;
             var order = 0;
-            foreach (var p in contentType.Properties)
+            foreach (var p in contentType.Properties.OrderBy(p => p.SortOrder).ToList())
             {
                 p.ContentTypeId = contentType.Id;
                 p.SortOrder = order++;
@@ -81,7 +81,8 @@ public sealed class ContentTypeService(IDbContextFactory<DynCmsDbContext> factor
             }
 
             var order = 0;
-            foreach (var incoming in contentType.Properties)
+            // The editor orders properties (and so their groups/tabs) through SortOrder, not list position.
+            foreach (var incoming in contentType.Properties.OrderBy(p => p.SortOrder).ToList())
             {
                 var target = existing.Properties.FirstOrDefault(p => p.Id == incoming.Id);
                 if (target is null)
@@ -106,6 +107,25 @@ public sealed class ContentTypeService(IDbContextFactory<DynCmsDbContext> factor
         await db.SaveChangesAsync(ct);
         cache.Invalidate();
         return (await GetAsync(contentType.Id, ct))!;
+    }
+
+    public async Task MoveAsync(Guid id, int direction, CancellationToken ct = default)
+    {
+        if (direction == 0) return;
+        await using var db = await factory.CreateDbContextAsync(ct);
+        // Same order the lists display (SortOrder, then name), so databases where every type still has
+        // SortOrder 0 are numbered 0..n-1 the first time one is moved.
+        var types = await db.ContentTypes.OrderBy(t => t.SortOrder).ThenBy(t => t.Name).ToListAsync(ct);
+        var index = types.FindIndex(t => t.Id == id);
+        if (index < 0) return;
+        var newIndex = Math.Clamp(index + Math.Sign(direction), 0, types.Count - 1);
+        if (newIndex == index) return;
+        var moved = types[index];
+        types.RemoveAt(index);
+        types.Insert(newIndex, moved);
+        for (var i = 0; i < types.Count; i++) types[i].SortOrder = i;
+        await db.SaveChangesAsync(ct);
+        cache.Invalidate();
     }
 
     public async Task<int> CountContentAsync(Guid contentTypeId, CancellationToken ct = default)

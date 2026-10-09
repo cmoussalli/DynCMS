@@ -81,6 +81,13 @@
         StateHasChanged();
     }
 
+    internal async Task MoveAsync(Guid id, int direction)
+    {
+        await Content.MoveAsync(id, direction);
+        await LoadAsync();
+        StateHasChanged();
+    }
+
     internal Task RequestCreateAsync(Guid? parentId) => OnCreateRequested.InvokeAsync(parentId);
 
     protected override async Task OnParametersSetAsync()
