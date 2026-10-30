@@ -8,5 +8,6 @@
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/DynCMS.Plugin.Guestbook/DynCMS.Plugin.Guestbook.csproj" />
+    <Project Path="samples/DynCMS.Plugin.Forms/DynCMS.Plugin.Forms.csproj" />
   </Folder>
 </Solution>

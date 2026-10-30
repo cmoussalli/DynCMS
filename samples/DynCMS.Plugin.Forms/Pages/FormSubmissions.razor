@@ -1,0 +1,108 @@
+@page "/admin/forms/{Id:guid}/submissions"
+@inject FormsService Forms
+@inject ToastService Toasts
+
+<PageTitle>Submissions · Forms · DynCMS</PageTitle>
+
+<div class="dc-page">
+    @if (_form is null)
+    {
+        @if (!_loading)
+        {
+            <div class="dc-alert dc-alert-warn"><Icon Name="alert" Size="15" /> <span>This form does not exist (any more). <a href="/admin/forms">Back to the forms</a></span></div>
+        }
+    }
+    else
+    {
+        <header class="dc-page-head dc-page-head-row">
+            <div>
+                <h1><Icon Name="mail" Size="22" /> @_form.Name</h1>
+                <p class="dc-muted">@_rows.Count submission@(_rows.Count == 1 ? "" : "s")@(_rows.Count >= 2000 ? " (the latest 2000 are listed)" : "").</p>
+            </div>
+            <div class="dc-inline">
+                <a class="dc-btn" href="/admin/forms"><Icon Name="arrow-left" Size="14" /> All forms</a>
+                <a class="dc-btn" href="/admin/forms/@_form.Id"><Icon Name="edit" Size="14" /> Edit form</a>
+                <a class="dc-btn" href="/api/plugins/forms/@_form.Id/export.csv" download><Icon Name="download" Size="14" /> Export CSV</a>
+                <button type="button" class="dc-btn dc-btn-danger-ghost" disabled="@(_rows.Count == 0)" @onclick="() => _confirmAll = true"><Icon Name="trash" Size="14" /> Delete all</button>
+            </div>
+        </header>
+
+        <div class="dc-table-wrap">
+            <table class="dc-table">
+                <thead>
+                    <tr>
+                        <th>Received</th>
+                        @foreach (var f in _fields)
+                        {
+                            <th>@f.Label</th>
+                        }
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _rows)
+                    {
+                        var data = row.GetData();
+                        <tr @key="row.Id">
+                            <td class="dc-muted" title="@row.PageUrl">@row.CreatedAt.ToLocalTime().ToString("g", CultureInfo.CurrentCulture)</td>
+                            @foreach (var f in _fields)
+                            {
+                                <td style="white-space:pre-wrap;max-width:360px">@(data.GetValueOrDefault(f.Name))</td>
+                            }
+                            <td class="dc-table-actions">
+                                <button type="button" class="dc-btn dc-btn-sm dc-btn-danger-ghost" title="Delete" @onclick="() => DeleteAsync(row)"><Icon Name="trash" Size="14" /></button>
+                            </td>
+                        </tr>
+                    }
+                    @if (_rows.Count == 0)
+                    {
+                        <tr><td colspan="@(_fields.Count + 2)" class="dc-muted">Nothing has been submitted yet.</td></tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@if (_confirmAll)
+{
+    <ConfirmDialog Title="Delete all submissions" Danger="true" ConfirmText="Delete all"
+                   Message="Delete every submission of this form? This cannot be undone."
+                   OnConfirm="DeleteAllAsync" OnCancel="() => { _confirmAll = false; return Task.CompletedTask; }" />
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private FormDefinition? _form;
+    private List<FormField> _fields = [];
+    private IReadOnlyList<FormSubmission> _rows = [];
+    private bool _loading = true;
+    private bool _confirmAll;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        _form = await Forms.GetAsync(Id);
+        _fields = _form?.GetFields() ?? [];
+        await LoadAsync();
+        _loading = false;
+    }
+
+    private async Task LoadAsync() => _rows = _form is null ? [] : await Forms.GetSubmissionsAsync(Id);
+
+    private async Task DeleteAsync(FormSubmission row)
+    {
+        await Forms.DeleteSubmissionAsync(row.Id);
+        Toasts.Info("Submission deleted");
+        await LoadAsync();
+    }
+
+    private async Task DeleteAllAsync()
+    {
+        _confirmAll = false;
+        var count = await Forms.DeleteAllSubmissionsAsync(Id);
+        Toasts.Info("Submissions deleted", $"{count} removed");
+        await LoadAsync();
+    }
+}

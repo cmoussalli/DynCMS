@@ -586,7 +586,8 @@ internal sealed partial class DatabaseMaintenanceService(
             if (config.Provider == DatabaseProvider.SqlServer && request.Mode == DatabaseSetupMode.NewDatabase && request.CreateDatabase)
                 await DatabaseSetupService.CreateSqlServerDatabaseAsync(config.SqlServer!, ct);
 
-            startup.RequestedStarterContent = request.StarterContent;   // read by the seeders when the new database is empty
+            // Read by the seeders when the new database is empty; an existing database keeps the host default.
+            startup.RequestedStarterContent = request.Mode == DatabaseSetupMode.NewDatabase ? request.StarterContent : null;
             await runtime.SwitchAsync(config, ct);
         }
         catch (OperationCanceledException) { throw; }

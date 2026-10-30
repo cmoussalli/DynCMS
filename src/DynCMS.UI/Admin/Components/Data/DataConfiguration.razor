@@ -42,7 +42,7 @@
     <section class="dc-card">
         <h3><Icon Name="edit" Size="16" /> Change database</h3>
 
-        <div class="dc-alert dc-alert-warn"><Icon Name="alert" Size="15" /> <span>Switching does not move any content. Take a backup first, then point DynCMS at the other database; an empty one gets a fresh schema and the starting content chosen below.</span></div>
+        <div class="dc-alert dc-alert-warn"><Icon Name="alert" Size="15" /> <span>Switching does not move any content. Take a backup first, then point DynCMS at the other database; a new one gets a fresh schema and the starting content you choose.</span></div>
 
         <span class="dc-label">Target</span>
         <div class="dc-setup-options">
@@ -130,7 +130,9 @@
             </div>
         }
 
-        <span class="dc-label">Starting content (when the database is empty)</span>
+        @if (_request.Mode == DatabaseSetupMode.NewDatabase)
+        {
+        <span class="dc-label">Starting content</span>
         <div class="dc-setup-options">
             <button type="button" class="dc-setup-option @(_request.StarterContent == StarterContent.EmptySite ? "dc-active" : "")" @onclick="() => SetStarterContent(StarterContent.EmptySite)" disabled="@_busy">
                 <Icon Name="file" Size="20" />
@@ -145,6 +147,7 @@
                 @if (_request.StarterContent == StarterContent.DemoBlog) { <Icon Name="check-circle" Size="16" Class="dc-setup-check" /> }
             </button>
         </div>
+        }
 
         @if (_result is not null)
         {

@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <!--
+    A DynCMS plugin that lets administrators build and manage any number of forms in the back office (/admin/forms)
+    and drop them into the website as partial views: every form is kept as a stored Liquid partial template, so a
+    page template renders it with {% render 'form-contact' %}. Submissions are stored in the plugin's own SQLite
+    database and can be read and exported (CSV) in the back office.
+
+    Build it and upload bin/Debug/DynCMS.Plugin.Forms.plugin.zip on Settings → Plugins, or point the build at a site:
+      dotnet build -p:DynCmsPluginDeployDir=..\..\src\DynCMS.Web\App_Data\plugins
+    and click "Reload" on the Plugins page afterwards.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>DynCMS.Plugin.Forms</RootNamespace>
+
+    <AssemblyTitle>Forms</AssemblyTitle>
+    <Description>Build forms in the back office and render them anywhere on the site as partial views; submissions are stored and exportable.</Description>
+    <Company>DynCMS samples</Company>
+    <Version>1.2.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Outside this repository: <PackageReference Include="DynCMS.Plugins.Sdk" Version="..." /> and drop the two Imports below. -->
+    <ProjectReference Include="..\..\src\DynCMS.Plugins.Sdk\DynCMS.Plugins.Sdk.csproj" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.12" />
+  </ItemGroup>
+
+  <Import Project="..\..\src\DynCMS.Plugins.Sdk\build\DynCMS.Plugins.Sdk.props" />
+  <Import Project="..\..\src\DynCMS.Plugins.Sdk\build\DynCMS.Plugins.Sdk.targets" />
+
+</Project>

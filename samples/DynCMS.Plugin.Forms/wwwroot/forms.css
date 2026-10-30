@@ -1,0 +1,100 @@
+/*
+ * Served by DynCMS at /_content/DynCMS.Plugin.Forms/forms.css while the plugin runs.
+ * Each form picks one built-in theme (class dcf-theme-{key} on .dcf). A theme only sets the custom properties below
+ * (plus a few overrides); the site's own CSS can still override any of them on .dcf or one form's #dcf-{alias}.
+ */
+.dcf {
+    --dcf-accent: #4f46e5; --dcf-accent-text: #fff; --dcf-text: inherit; --dcf-label: inherit;
+    --dcf-bg: transparent; --dcf-input-bg: #fff; --dcf-input-text: #111827; --dcf-border: rgba(0, 0, 0, .18);
+    --dcf-radius: 8px; --dcf-pad: 0; --dcf-shadow: none; --dcf-gap: 16px; --dcf-border-width: 1px;
+    --dcf-ok-bg: #ecfdf5; --dcf-ok-text: #047857; --dcf-err-bg: #fef2f2; --dcf-err: #b91c1c; --dcf-muted: .65;
+    max-width: 640px; color: var(--dcf-text); background: var(--dcf-bg); padding: var(--dcf-pad); border-radius: var(--dcf-radius); box-shadow: var(--dcf-shadow);
+    box-sizing: border-box;
+}
+.dcf-form { display: grid; gap: var(--dcf-gap); }
+.dcf-field { display: grid; gap: 6px; }
+.dcf-field > label, .dcf-group legend { font-weight: 600; font-size: 14px; color: var(--dcf-label); }
+.dcf-req { color: var(--dcf-err); }
+.dcf-field input:not([type=checkbox]):not([type=radio]), .dcf-field select, .dcf-field textarea {
+    font: inherit; padding: 9px 11px; border: var(--dcf-border-width) solid var(--dcf-border); border-radius: var(--dcf-radius); background: var(--dcf-input-bg); color: var(--dcf-input-text); width: 100%; box-sizing: border-box;
+}
+.dcf-field input::placeholder, .dcf-field textarea::placeholder { color: var(--dcf-input-text); opacity: .45; }
+.dcf-field textarea { resize: vertical; }
+.dcf-field input:focus, .dcf-field select:focus, .dcf-field textarea:focus { outline: 2px solid var(--dcf-accent); outline-offset: 1px; }
+.dcf-field input[type=checkbox], .dcf-field input[type=radio] { accent-color: var(--dcf-accent); }
+.dcf-group { border: 0; padding: 0; margin: 0; display: grid; gap: 6px; }
+.dcf-check { display: flex; align-items: center; gap: 8px; font-weight: 400 !important; cursor: pointer; }
+.dcf-help { opacity: var(--dcf-muted); font-size: 13px; }
+.dcf-error { color: var(--dcf-err); font-size: 13px; }
+.dcf-invalid input, .dcf-invalid select, .dcf-invalid textarea { border-color: var(--dcf-err) !important; }
+.dcf-status { margin: 0; padding: 10px 12px; border-radius: var(--dcf-radius); font-size: 14px; }
+.dcf-status.dcf-ok { background: var(--dcf-ok-bg); color: var(--dcf-ok-text); }
+.dcf-status.dcf-error { background: var(--dcf-err-bg); color: var(--dcf-err); }
+.dcf-submit { justify-self: start; font: inherit; font-weight: 600; padding: 10px 20px; border: 0; border-radius: var(--dcf-radius); background: var(--dcf-accent); color: var(--dcf-accent-text); cursor: pointer; }
+.dcf-submit:hover:not(:disabled) { filter: brightness(1.08); }
+.dcf-submit:disabled { opacity: .6; cursor: default; }
+.dcf-closed { padding: 12px 14px; border: 1px dashed var(--dcf-border); border-radius: var(--dcf-radius); opacity: .7; }
+/* The honeypot: out of sight for people, still in the page for bots. */
+.dcf-hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+
+/* ---- Built-in themes ------------------------------------------------------------------------------ */
+
+/* Default: the base look above (dcf-theme-default needs no overrides). */
+
+/* Clean: neutral and compact, thin grey lines, black button. */
+.dcf-theme-clean { --dcf-accent: #111827; --dcf-border: #d1d5db; --dcf-radius: 4px; --dcf-gap: 14px; }
+.dcf-theme-clean .dcf-field > label, .dcf-theme-clean .dcf-group legend { font-weight: 500; }
+
+/* Card: the form sits on a white card with a soft shadow. */
+.dcf-theme-card { --dcf-accent: #2563eb; --dcf-bg: #fff; --dcf-text: #1f2937; --dcf-border: #e5e7eb; --dcf-radius: 12px; --dcf-pad: 28px; --dcf-shadow: 0 10px 30px rgba(15, 23, 42, .10); --dcf-input-bg: #f9fafb; }
+.dcf-theme-card .dcf-submit { width: 100%; justify-self: stretch; padding: 12px 20px; }
+
+/* Dark: light text on a dark panel, violet accent. */
+.dcf-theme-dark { --dcf-accent: #8b5cf6; --dcf-bg: #111827; --dcf-text: #e5e7eb; --dcf-label: #f3f4f6; --dcf-input-bg: #1f2937; --dcf-input-text: #f9fafb; --dcf-border: #374151; --dcf-radius: 10px; --dcf-pad: 28px;
+    --dcf-ok-bg: #064e3b; --dcf-ok-text: #a7f3d0; --dcf-err-bg: #4c0519; --dcf-err: #fda4af; --dcf-muted: .7; }
+
+/* Underline: Material-like inputs with only a bottom line. */
+.dcf-theme-underline { --dcf-accent: #0d9488; --dcf-radius: 0; --dcf-border: #9ca3af; --dcf-gap: 22px; }
+.dcf-theme-underline .dcf-field input:not([type=checkbox]):not([type=radio]), .dcf-theme-underline .dcf-field select, .dcf-theme-underline .dcf-field textarea {
+    border-width: 0 0 2px 0; background: transparent; padding-left: 2px; padding-right: 2px; color: inherit;
+}
+.dcf-theme-underline .dcf-field input:focus, .dcf-theme-underline .dcf-field select:focus, .dcf-theme-underline .dcf-field textarea:focus { outline: 0; border-bottom-color: var(--dcf-accent); }
+.dcf-theme-underline .dcf-field select option { color: #111827; }
+.dcf-theme-underline .dcf-submit { border-radius: 999px; padding: 10px 28px; }
+
+/* Soft: pastel panel, pill buttons and rounded inputs. */
+.dcf-theme-soft { --dcf-accent: #ec4899; --dcf-bg: #fdf2f8; --dcf-text: #4a044e; --dcf-label: #831843; --dcf-border: #fbcfe8; --dcf-radius: 18px; --dcf-pad: 28px; --dcf-input-bg: #fff; --dcf-ok-bg: #dcfce7; }
+.dcf-theme-soft .dcf-field input:not([type=checkbox]):not([type=radio]), .dcf-theme-soft .dcf-field select, .dcf-theme-soft .dcf-field textarea { padding: 11px 16px; }
+.dcf-theme-soft .dcf-submit { border-radius: 999px; padding: 12px 28px; }
+
+/* Classic: serif, square corners and a framed fieldset feel. */
+.dcf-theme-classic { --dcf-accent: #7c2d12; --dcf-bg: #fffbeb; --dcf-text: #292524; --dcf-border: #78716c; --dcf-radius: 0; --dcf-pad: 24px; --dcf-border-width: 1px; --dcf-input-bg: #fff; font-family: Georgia, "Times New Roman", serif; border: 2px solid #78716c; }
+.dcf-theme-classic .dcf-field > label, .dcf-theme-classic .dcf-group legend { font-weight: 700; text-transform: uppercase; letter-spacing: .04em; font-size: 12px; }
+.dcf-theme-classic .dcf-submit { text-transform: uppercase; letter-spacing: .06em; font-size: 13px; }
+
+/* Bold: thick outlines and a flat, high-contrast button. */
+.dcf-theme-bold { --dcf-accent: #facc15; --dcf-accent-text: #111827; --dcf-bg: #fff; --dcf-text: #111827; --dcf-border: #111827; --dcf-border-width: 3px; --dcf-radius: 0; --dcf-pad: 24px; --dcf-shadow: 8px 8px 0 #111827; --dcf-ok-bg: #bbf7d0; --dcf-ok-text: #111827; }
+.dcf-theme-bold { border: 3px solid #111827; }
+.dcf-theme-bold .dcf-field > label, .dcf-theme-bold .dcf-group legend { font-weight: 800; }
+.dcf-theme-bold .dcf-submit { border: 3px solid #111827; box-shadow: 4px 4px 0 #111827; font-weight: 800; }
+.dcf-theme-bold .dcf-submit:active { box-shadow: none; transform: translate(4px, 4px); }
+
+/* Google Forms style: white card with a purple top bar, underlined inputs, purple button. */
+.dcf-theme-google { --dcf-accent: #673ab7; --dcf-bg: #fff; --dcf-text: #202124; --dcf-label: #202124; --dcf-border: #dadce0; --dcf-radius: 8px; --dcf-pad: 24px; --dcf-gap: 24px;
+    --dcf-err: #d93025; --dcf-err-bg: #fce8e6; font-family: "Google Sans", Roboto, Arial, sans-serif; border: 1px solid #dadce0; border-top: 10px solid #673ab7; }
+.dcf-theme-google .dcf-field { padding: 4px 0; }
+.dcf-theme-google .dcf-field > label, .dcf-theme-google .dcf-group legend { font-size: 16px; font-weight: 400; }
+.dcf-theme-google .dcf-field input:not([type=checkbox]):not([type=radio]), .dcf-theme-google .dcf-field select, .dcf-theme-google .dcf-field textarea {
+    border-width: 0 0 1px 0; border-radius: 0; background: transparent; padding: 8px 0; color: #202124; }
+.dcf-theme-google .dcf-field input:focus, .dcf-theme-google .dcf-field select:focus, .dcf-theme-google .dcf-field textarea:focus { outline: 0; border-bottom: 2px solid var(--dcf-accent); margin-bottom: -1px; }
+.dcf-theme-google .dcf-help { font-size: 12px; }
+.dcf-theme-google .dcf-submit { font-weight: 500; padding: 9px 24px; border-radius: 4px; letter-spacing: .02em; }
+
+/* Microsoft Forms style (Fluent): square-ish fields, grey outlines, blue accent, Segoe UI. */
+.dcf-theme-microsoft { --dcf-accent: #0f6cbd; --dcf-bg: #fff; --dcf-text: #242424; --dcf-label: #242424; --dcf-border: #8a8886; --dcf-radius: 2px; --dcf-pad: 28px; --dcf-gap: 20px;
+    --dcf-shadow: 0 2px 4px rgba(0, 0, 0, .14), 0 0 2px rgba(0, 0, 0, .12); --dcf-err: #a4262c; --dcf-err-bg: #fde7e9; --dcf-ok-bg: #dff6dd; --dcf-ok-text: #107c10;
+    font-family: "Segoe UI", "Segoe UI Web", system-ui, sans-serif; }
+.dcf-theme-microsoft .dcf-field > label, .dcf-theme-microsoft .dcf-group legend { font-size: 14px; font-weight: 600; }
+.dcf-theme-microsoft .dcf-field input:not([type=checkbox]):not([type=radio]), .dcf-theme-microsoft .dcf-field select, .dcf-theme-microsoft .dcf-field textarea { padding: 7px 10px; }
+.dcf-theme-microsoft .dcf-field input:focus, .dcf-theme-microsoft .dcf-field select:focus, .dcf-theme-microsoft .dcf-field textarea:focus { outline: 0; border-color: var(--dcf-accent); box-shadow: inset 0 -2px 0 var(--dcf-accent); }
+.dcf-theme-microsoft .dcf-submit { padding: 8px 20px; font-weight: 600; font-size: 14px; }

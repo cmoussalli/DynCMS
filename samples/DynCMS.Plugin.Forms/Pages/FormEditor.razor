@@ -1,0 +1,279 @@
+@page "/admin/forms/new"
+@page "/admin/forms/{Id:guid}"
+@inject FormsService Forms
+@inject ToastService Toasts
+@inject NavigationManager Nav
+
+@*
+    Create or edit one form: settings, a field builder and a live preview of the markup that ends up in the partial view.
+    The editor works on copies (_form, _fields); Save validates and writes the form and its partial in one step.
+*@
+
+<PageTitle>@(_isNew ? "New form" : _form.Name) · Forms · DynCMS</PageTitle>
+<link rel="stylesheet" href="/_content/DynCMS.Plugin.Forms/forms.css" />
+
+<div class="dc-page">
+    @if (_missing)
+    {
+        <div class="dc-alert dc-alert-warn"><Icon Name="alert" Size="15" /> <span>This form does not exist (any more). <a href="/admin/forms">Back to the forms</a></span></div>
+    }
+    else
+    {
+        <header class="dc-page-head dc-page-head-row">
+            <div>
+                <h1><Icon Name="list" Size="22" /> @(_isNew ? "New form" : _form.Name)</h1>
+                <p class="dc-muted">@(_isNew ? "Set it up, then save to create its partial view." : "Saving rewrites the form's partial view; pages show the change at once.")</p>
+            </div>
+            <div class="dc-inline">
+                <a class="dc-btn" href="/admin/forms"><Icon Name="arrow-left" Size="14" /> All forms</a>
+                @if (!_isNew)
+                {
+                    <a class="dc-btn" href="/admin/forms/@_form.Id/submissions"><Icon Name="mail" Size="14" /> Submissions</a>
+                }
+                <button type="button" class="dc-btn dc-btn-primary" @onclick="SaveAsync" disabled="@_saving"><Icon Name="save" Size="14" /> Save</button>
+            </div>
+        </header>
+
+        @if (_error is not null)
+        {
+            <div class="dc-alert dc-alert-warn"><Icon Name="alert" Size="15" /> <span>@_error</span></div>
+        }
+
+        <div class="dc-card" style="margin-bottom:16px">
+            <h3><Icon Name="settings" Size="16" /> Settings</h3>
+            <div class="dc-form-grid">
+                <label class="dc-field"><span class="dc-label">Name</span>
+                    <input class="dc-input" value="@_form.Name" @oninput="OnNameInput" maxlength="120" /></label>
+                <label class="dc-field"><span class="dc-label">Alias</span>
+                    <input class="dc-input" value="@_form.Alias" @oninput="OnAliasInput" maxlength="60" disabled="@(!_isNew)" />
+                    <small class="dc-muted">@(_isNew ? "Part of the partial view's name; it cannot change after saving." : "Fixed: page templates refer to it.")</small></label>
+                <label class="dc-field"><span class="dc-label">Button text</span>
+                    <input class="dc-input" @bind="_form.SubmitLabel" maxlength="60" /></label>
+                <label class="dc-field"><span class="dc-label">After sending, go to (optional)</span>
+                    <input class="dc-input" @bind="_form.RedirectUrl" placeholder="/thanks" /></label>
+                <label class="dc-field"><span class="dc-label">Success message</span>
+                    <input class="dc-input" @bind="_form.SuccessMessage" maxlength="300" /></label>
+                <label class="dc-field"><span class="dc-label">Description (only shown here)</span>
+                    <input class="dc-input" @bind="_form.Description" maxlength="300" /></label>
+            </div>
+            <label class="dc-check"><input type="checkbox" @bind="_form.IsEnabled" /> <span>Accepting submissions (a closed form shows “currently closed”)</span></label>
+        </div>
+
+        <div class="dc-card" style="margin-bottom:16px">
+            <h3><Icon Name="image" Size="16" /> Theme</h3>
+            <p class="dc-muted">Pick one of the built-in looks. The preview below follows your choice.</p>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px" role="radiogroup" aria-label="Form theme">
+                @foreach (var t in FormThemes.All)
+                {
+                    var selected = t.Key == _form.Theme;
+                    <button type="button" role="radio" aria-checked="@(selected ? "true" : "false")" title="@t.Description"
+                            style="text-align:left;cursor:pointer;padding:10px;border-radius:8px;background:transparent;color:inherit;font:inherit;border:2px solid @(selected ? t.Accent : "rgba(128,128,128,.35)")"
+                            @onclick="() => _form.Theme = t.Key">
+                        <span style="display:block;height:44px;border-radius:6px;margin-bottom:8px;background:@t.Background;border:1px solid rgba(128,128,128,.35);padding:8px;box-sizing:border-box">
+                            <span style="display:block;height:6px;width:70%;border-radius:3px;background:@t.Text;opacity:.35;margin-bottom:6px"></span>
+                            <span style="display:block;height:8px;width:36%;border-radius:3px;background:@t.Accent"></span>
+                        </span>
+                        <strong style="display:block;font-size:13px">@t.Name @(selected ? "✓" : "")</strong>
+                        <small class="dc-muted">@t.Description</small>
+                    </button>
+                }
+            </div>
+            <label class="dc-field" style="margin-top:14px"><span class="dc-label">Custom CSS (optional)</span>
+                <textarea class="dc-input" rows="7" spellcheck="false" style="font-family:ui-monospace,monospace" @bind="_form.CustomCss" @bind:event="oninput"
+                          placeholder="--dcf-accent: #e11d48;&#10;.dcf-submit { border-radius: 999px; }&#10;.dcf-field > label { font-size: 15px; }"></textarea>
+                <small class="dc-muted">Applied on top of the theme, for this form only: write declarations (such as a <code>--dcf-*</code> variable) and/or nested rules for the <code>.dcf-*</code> classes. No HTML, <code>@@import</code> or Liquid braces.</small></label>
+        </div>
+
+        @if (!_isNew)
+        {
+            <div class="dc-card" style="margin-bottom:16px">
+                <h3><Icon Name="code" Size="16" /> Show it on the site</h3>
+                <p class="dc-muted">Put this where the form should appear in a page template (Settings → Templates):</p>
+                <input class="dc-input" style="font-family:ui-monospace,monospace" readonly value="@Snippet" onfocus="this.select()" />
+            </div>
+        }
+
+        <div class="dc-card" style="margin-bottom:16px">
+            <h3><Icon Name="layers" Size="16" /> Fields</h3>
+            @for (var i = 0; i < _fields.Count; i++)
+            {
+                var index = i;
+                var f = _fields[index];
+                <div class="dc-card" style="margin-bottom:12px" @key="f">
+                    <div class="dc-form-grid">
+                        <label class="dc-field"><span class="dc-label">Label</span>
+                            <input class="dc-input" value="@f.Label" @oninput="e => OnLabelInput(f, e.Value?.ToString())" maxlength="120" /></label>
+                        <label class="dc-field"><span class="dc-label">Type</span>
+                            <select class="dc-input" value="@f.Type" @onchange="e => OnTypeChanged(f, e.Value?.ToString())">
+                                @foreach (var t in Enum.GetValues<FieldType>())
+                                {
+                                    <option value="@t">@TypeName(t)</option>
+                                }
+                            </select></label>
+                        <label class="dc-field"><span class="dc-label">Field name (key in submissions)</span>
+                            <input class="dc-input" value="@f.Name" @oninput="e => f.Name = e.Value?.ToString() ?? string.Empty" maxlength="60" placeholder="@Slug.ToAlias(f.Label)" /></label>
+                        @if (f.Type is not (FieldType.Checkbox or FieldType.Radio or FieldType.CheckboxGroup))
+                        {
+                            <label class="dc-field"><span class="dc-label">@(f.Type == FieldType.Select ? "First entry of the list" : "Placeholder")</span>
+                                <input class="dc-input" @bind="f.Placeholder" maxlength="120" /></label>
+                        }
+                        <label class="dc-field"><span class="dc-label">Help text</span>
+                            <input class="dc-input" @bind="f.HelpText" maxlength="200" /></label>
+                        @if (f.Type is FieldType.Text or FieldType.Email or FieldType.Phone or FieldType.TextArea)
+                        {
+                            <label class="dc-field"><span class="dc-label">Longest text (0 = default)</span>
+                                <input class="dc-input" type="number" min="0" max="10000" @bind="f.MaxLength" /></label>
+                        }
+                    </div>
+                    @if (f.HasOptions)
+                    {
+                        <label class="dc-field"><span class="dc-label">Options (one per line)</span>
+                            <textarea class="dc-input" rows="4" value="@string.Join("\n", f.Options)" @onchange="e => f.Options = Lines(e.Value?.ToString())"></textarea></label>
+                    }
+                    <div class="dc-inline" style="justify-content:space-between">
+                        <label class="dc-check"><input type="checkbox" @bind="f.Required" /> <span>Required</span></label>
+                        <div class="dc-inline">
+                            <button type="button" class="dc-btn dc-btn-sm" title="Move up" disabled="@(index == 0)" @onclick="() => Move(index, -1)"><Icon Name="arrow-up" Size="14" /></button>
+                            <button type="button" class="dc-btn dc-btn-sm" title="Move down" disabled="@(index == _fields.Count - 1)" @onclick="() => Move(index, 1)"><Icon Name="arrow-down" Size="14" /></button>
+                            <button type="button" class="dc-btn dc-btn-sm dc-btn-danger-ghost" title="Remove field" @onclick="() => _fields.RemoveAt(index)"><Icon Name="trash" Size="14" /></button>
+                        </div>
+                    </div>
+                </div>
+            }
+            <button type="button" class="dc-btn" @onclick="AddField"><Icon Name="plus" Size="14" /> Add field</button>
+        </div>
+
+        <div class="dc-card">
+            <h3><Icon Name="eye" Size="16" /> Preview</h3>
+            <p class="dc-muted">The generated markup, inactive here. The site's own CSS can still restyle the <code>.dcf-*</code> classes or override the theme's <code>--dcf-*</code> variables.</p>
+            <fieldset disabled style="border:0;padding:0;margin:0">@((MarkupString)PreviewHtml())</fieldset>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+
+    private FormDefinition _form = new();
+    private List<FormField> _fields = [];
+    private bool _isNew;
+    private bool _missing;
+    private bool _saving;
+    private bool _aliasEdited;
+    private string? _error;
+
+    private string Snippet => $"{{% render '{_form.PartialAlias}' %}}";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _error = null;
+        _missing = false;
+        _isNew = Id is null;
+        if (_isNew)
+        {
+            _form = FormsService.NewForm();
+            _fields = _form.GetFields();
+            _aliasEdited = false;
+            return;
+        }
+
+        var loaded = await Forms.GetAsync(Id!.Value);
+        if (loaded is null) { _missing = true; return; }
+        _form = loaded;
+        _fields = loaded.GetFields();
+    }
+
+    private void OnNameInput(ChangeEventArgs e)
+    {
+        _form.Name = e.Value?.ToString() ?? string.Empty;
+        if (_isNew && !_aliasEdited) _form.Alias = Slug.ToUrlSegment(_form.Name);
+    }
+
+    private void OnAliasInput(ChangeEventArgs e)
+    {
+        _aliasEdited = true;
+        _form.Alias = e.Value?.ToString() ?? string.Empty;
+    }
+
+    private void OnLabelInput(FormField f, string? label) => f.Label = label ?? string.Empty;
+
+    private void OnTypeChanged(FormField f, string? value)
+    {
+        if (Enum.TryParse<FieldType>(value, out var type)) f.Type = type;
+        if (f.HasOptions && f.Options.Count == 0) f.Options = ["Option 1", "Option 2"];
+    }
+
+    private void AddField() => _fields.Add(new FormField { Label = $"Field {_fields.Count + 1}" });
+
+    private void Move(int index, int by)
+    {
+        var target = index + by;
+        if (target < 0 || target >= _fields.Count) return;
+        (_fields[index], _fields[target]) = (_fields[target], _fields[index]);
+    }
+
+    private static List<string> Lines(string? text) =>
+        (text ?? string.Empty).Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList();
+
+    private static string TypeName(FieldType t) => t switch
+    {
+        FieldType.Text => "Text",
+        FieldType.Email => "Email",
+        FieldType.Phone => "Phone",
+        FieldType.Number => "Number",
+        FieldType.Date => "Date",
+        FieldType.TextArea => "Text area",
+        FieldType.Select => "Drop-down list",
+        FieldType.Radio => "Radio buttons (pick one)",
+        FieldType.Checkbox => "Single checkbox",
+        FieldType.CheckboxGroup => "Checkboxes (pick several)",
+        _ => t.ToString()
+    };
+
+    // A throw-away form: the preview shows what the fields would render, saved or not. Names missing so far are
+    // derived from the label the way saving does, so the markup is complete.
+    private string PreviewHtml()
+    {
+        try
+        {
+            var preview = new FormDefinition { Alias = string.IsNullOrWhiteSpace(_form.Alias) ? "preview" : Slug.ToUrlSegment(_form.Alias), Theme = _form.Theme, CustomCss = _form.CustomCss, SubmitLabel = _form.SubmitLabel, SuccessMessage = _form.SuccessMessage, IsEnabled = true };
+            preview.SetFields(_fields.Select(f =>
+            {
+                var c = f.Clone();
+                if (string.IsNullOrWhiteSpace(c.Name)) c.Name = Slug.ToAlias(c.Label);
+                return c;
+            }));
+            return FormHtml.Render(preview);
+        }
+        catch (Exception)
+        {
+            return string.Empty;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        _saving = true;
+        try
+        {
+            _form.SetFields(_fields);
+            var saved = await Forms.SaveAsync(_form);
+            Toasts.Success("Form saved", $"Partial view: {saved.PartialAlias}");
+            if (_isNew) Nav.NavigateTo($"/admin/forms/{saved.Id}");
+            else
+            {
+                _form = saved;
+                _fields = saved.GetFields();
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+}

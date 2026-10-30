@@ -123,6 +123,8 @@
                 }
             </section>
 
+            @if (_request.Mode == DatabaseSetupMode.NewDatabase)
+            {
             <section class="dc-setup-section">
                 <h4>4. Starting content</h4>
                 <div class="dc-setup-options">
@@ -139,11 +141,12 @@
                         @if (_request.StarterContent == StarterContent.DemoBlog) { <Icon Name="check-circle" Size="16" Class="dc-setup-check" /> }
                     </button>
                 </div>
-                <small class="dc-muted">Applies only when the database has no content yet. Everything created is ordinary content you can edit or delete later.</small>
+                <small class="dc-muted">Everything created is ordinary content you can edit or delete later.</small>
             </section>
+            }
 
             <section class="dc-setup-section">
-                <h4>5. Visitor analytics</h4>
+                <h4>@(StepOffset + 4). Visitor analytics</h4>
                 <div class="dc-setup-options">
                     <button type="button" class="dc-setup-option @(!_separateAnalytics ? "dc-active" : "")" @onclick="() => SetSeparateAnalytics(false)">
                         <Icon Name="database" Size="20" />
@@ -188,7 +191,7 @@
             </section>
 
             <section class="dc-setup-section">
-                <h4>6. Administrator account</h4>
+                <h4>@(StepOffset + 5). Administrator account</h4>
                 <div class="dc-form-grid">
                     <label class="dc-field">
                         <span class="dc-label">User name</span>
@@ -251,6 +254,9 @@
     private DatabaseTestResult? _result;
     private bool _busy;
     private string? _action;
+
+    /// <summary>The "Starting content" step is only shown for a new database, so the steps after it shift up by one.</summary>
+    private int StepOffset => _request.Mode == DatabaseSetupMode.NewDatabase ? 1 : 0;
 
     private string ResolvedSqlitePath
     {

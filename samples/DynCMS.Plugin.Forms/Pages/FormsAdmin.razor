@@ -1,0 +1,131 @@
+@page "/admin/forms"
+@inject FormsService Forms
+@inject ToastService Toasts
+@inject NavigationManager Nav
+
+@*
+    The forms overview: every form with its partial view alias, submissions and quick actions. The /admin/ prefix puts
+    the page inside the back office; dc-* classes and Icon come from the DynCMS admin.
+*@
+
+<PageTitle>Forms · DynCMS</PageTitle>
+
+<div class="dc-page">
+    <header class="dc-page-head dc-page-head-row">
+        <div>
+            <h1><Icon Name="list" Size="22" /> Forms</h1>
+            <p class="dc-muted">
+                Build a form here, then show it on the site from any template with
+                <code>{% render 'form-<em>alias</em>' %}</code>. Submissions are stored in the plugin's own database.
+            </p>
+        </div>
+        <a class="dc-btn dc-btn-primary" href="/admin/forms/new"><Icon Name="plus" Size="14" /> New form</a>
+    </header>
+
+    <div class="dc-stats">
+        <div class="dc-stat"><span class="dc-stat-tile"><Icon Name="list" Size="20" /></span><strong>@_forms.Count</strong><span>Forms</span></div>
+        <div class="dc-stat dc-stat-green"><span class="dc-stat-tile"><Icon Name="check-circle" Size="20" /></span><strong>@_forms.Count(f => f.Form.IsEnabled)</strong><span>Open</span></div>
+        <div class="dc-stat dc-stat-amber"><span class="dc-stat-tile"><Icon Name="mail" Size="20" /></span><strong>@_forms.Sum(f => f.Submissions)</strong><span>Submissions</span></div>
+    </div>
+
+    <div class="dc-table-wrap">
+        <table class="dc-table">
+            <thead><tr><th>Form</th><th>Partial view</th><th>Fields</th><th>Submissions</th><th>State</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var s in _forms)
+                {
+                    <tr @key="s.Form.Id">
+                        <td>
+                            <a href="/admin/forms/@s.Form.Id"><strong>@s.Form.Name</strong></a>
+                            @if (!string.IsNullOrWhiteSpace(s.Form.Description))
+                            {
+                                <div class="dc-muted">@s.Form.Description</div>
+                            }
+                        </td>
+                        <td><code>{% render '@s.Form.PartialAlias' %}</code></td>
+                        <td class="dc-muted">@s.Fields</td>
+                        <td>
+                            <a href="/admin/forms/@s.Form.Id/submissions">@s.Submissions</a>
+                            @if (s.LastSubmissionAt is DateTime last)
+                            {
+                                <div class="dc-muted">last @last.ToLocalTime().ToString("g", CultureInfo.CurrentCulture)</div>
+                            }
+                        </td>
+                        <td>
+                            @if (s.Form.IsEnabled)
+                            {
+                                <span class="dc-badge dc-badge-success">Open</span>
+                            }
+                            else
+                            {
+                                <span class="dc-badge dc-badge-muted">Closed</span>
+                            }
+                        </td>
+                        <td class="dc-table-actions">
+                            <a class="dc-btn dc-btn-sm" href="/admin/forms/@s.Form.Id"><Icon Name="edit" Size="14" /> Edit</a>
+                            <a class="dc-btn dc-btn-sm" href="/admin/forms/@s.Form.Id/submissions"><Icon Name="mail" Size="14" /> Submissions</a>
+                            <button type="button" class="dc-btn dc-btn-sm" title="Duplicate" @onclick="() => DuplicateAsync(s.Form)"><Icon Name="copy" Size="14" /></button>
+                            <button type="button" class="dc-btn dc-btn-sm dc-btn-danger-ghost" title="Delete" @onclick="() => _deleting = s.Form"><Icon Name="trash" Size="14" /></button>
+                        </td>
+                    </tr>
+                }
+                @if (_forms.Count == 0 && !_loading)
+                {
+                    <tr><td colspan="6" class="dc-muted">No forms yet. <a href="/admin/forms/new">Create the first one.</a></td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@if (_deleting is not null)
+{
+    <ConfirmDialog Title="Delete form" Danger="true" ConfirmText="Delete"
+                   Message="@($"Delete '{_deleting.Name}' with all of its submissions? This cannot be undone.")"
+                   OnConfirm="DeleteAsync" OnCancel="() => { _deleting = null; return Task.CompletedTask; }" />
+}
+
+@code {
+    private IReadOnlyList<FormSummary> _forms = [];
+    private FormDefinition? _deleting;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        _loading = false;
+    }
+
+    private async Task LoadAsync() => _forms = await Forms.GetSummariesAsync();
+
+    private async Task DuplicateAsync(FormDefinition form)
+    {
+        try
+        {
+            var copy = await Forms.DuplicateAsync(form.Id);
+            Toasts.Success("Form duplicated", copy.Name);
+            Nav.NavigateTo($"/admin/forms/{copy.Id}");
+        }
+        catch (InvalidOperationException ex)
+        {
+            Toasts.Error("Could not duplicate", ex.Message);
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        var form = _deleting;
+        _deleting = null;
+        if (form is null) return;
+        try
+        {
+            await Forms.DeleteAsync(form.Id);
+            Toasts.Info("Form deleted", form.Name);
+            await LoadAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            Toasts.Error("Could not delete", ex.Message);
+        }
+    }
+}

@@ -193,7 +193,8 @@ internal sealed class DatabaseSetupService(
         }
 
         // The seeders run as startup tasks inside InitializeAfterSetupAsync; this is how they learn what was picked.
-        startup.RequestedStarterContent = request.StarterContent;
+        // An existing database is an existing site: the starting-content choice only applies to a new one.
+        startup.RequestedStarterContent = request.Mode == DatabaseSetupMode.NewDatabase ? request.StarterContent : null;
         startup.RequestedAdmin = (adminUser, request.AdminPassword);
         try
         {

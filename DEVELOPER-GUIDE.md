@@ -2597,7 +2597,7 @@ Added 2026-09-27. A plugin is a Razor class library that is loaded into the runn
 `App_Data/plugins/{id}/` (configurable, §16) and can be started, stopped, reloaded, installed and uninstalled without a
 restart. The plugin contract (`IDynCmsPlugin`, `DynCmsPlugin`, `IPluginContext`, `PluginMenuItem`, `CmsRoles`) lives in
 `DynCMS.Plugins.Sdk`; the machinery that loads and runs plugins lives in `DynCMS.Core/Plugins/`; the back office page is `DynCMS.UI/Admin/Components/PluginsPanel.razor`;
-the sample is `samples/DynCMS.Plugin.Guestbook`.
+the samples are `samples/DynCMS.Plugin.Guestbook` and `samples/DynCMS.Plugin.Forms` (a form builder: forms are kept as stored Liquid partials, `{% render 'form-contact' %}`, and post to a plugin endpoint).
 
 ### 25.1 Writing a plugin
 
